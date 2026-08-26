@@ -81,11 +81,11 @@ pnpm contracts:setup
   gives 0.1 ETH per 24 h with a free account, no mainnet balance required.
 - **DRIFT** — call `faucet()` on the deployed token: 100 DRIFT per 12 h, no gatekeeping.
 
-For scripted top-ups there is `pnpm faucet --target 0.05`, which claims against
-the CDP Faucets API until the deployer reaches a balance. It needs
-`CDP_API_KEY_ID` and `CDP_API_KEY_SECRET`, and it pays **0.0001 ETH per claim** —
-the portal hands over the same 0.1 ETH/day in one click, so use the portal to
-fill an empty wallet and the script to top one up.
+Both the portal and the API pay **0.0001 ETH per claim**, against a cap of 1000
+claims per 24 h. Filling a wallet by hand therefore is not practical, so use
+`pnpm faucet --target 0.05`: it derives the deployer address from `MNEMONIC`,
+works out the shortfall and claims until it is covered. Needs `CDP_API_KEY_ID`
+and `CDP_API_KEY_SECRET` from the CDP portal.
 
 No LINK required. `RaceEscrow` requests randomness with `nativePayment` on, so
 the VRF subscription is funded in ETH like everything else.

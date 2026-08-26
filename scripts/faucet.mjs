@@ -191,15 +191,37 @@ if (!process.env.CDP_API_KEY_ID || !process.env.CDP_API_KEY_SECRET) {
   );
 }
 
-const {CdpClient} = await import("@coinbase/cdp-sdk");
+let CdpClient;
+try {
+  ({CdpClient} = await import("@coinbase/cdp-sdk"));
+} catch {
+  fail("@coinbase/cdp-sdk is not installed. Run `pnpm install` at the repo root.");
+}
+
 const cdp = new CdpClient();
 
+/** Overwrite one line on a terminal; emit periodic lines when piped to a file. */
+function reportProgress(done, total) {
+  if (process.stdout.isTTY) {
+    process.stdout.write(`\rclaimed ${done}/${total}`);
+  } else if (done === total || done % 25 === 0) {
+    console.log(`claimed ${done}/${total}`);
+  }
+}
+
 let claimed = 0;
+let lastTxHash = null;
+
 for (let i = 0; i < claimsNeeded; i++) {
   try {
-    await cdp.evm.requestFaucet({address, network: "base-sepolia", token: "eth"});
+    const response = await cdp.evm.requestFaucet({
+      address,
+      network: "base-sepolia",
+      token: "eth",
+    });
     claimed++;
-    process.stdout.write(`\rclaimed ${claimed}/${claimsNeeded}`);
+    lastTxHash = response?.transactionHash ?? lastTxHash;
+    reportProgress(claimed, claimsNeeded);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     // A rate limit is the expected stopping condition, not a crash: keep
@@ -210,6 +232,17 @@ for (let i = 0; i < claimsNeeded; i++) {
   if (i < claimsNeeded - 1) await new Promise((r) => setTimeout(r, DELAY_MS));
 }
 
+// `requestFaucet` returns once the claim is accepted, not once it is mined.
+// Reading the balance straight away reports the balance from before the run.
+if (lastTxHash) {
+  console.log("\n\nwaiting for the last claim to be mined...");
+  try {
+    await publicClient.waitForTransactionReceipt({hash: lastTxHash, timeout: 120_000});
+  } catch {
+    console.log("(receipt timed out; the balance below may still be catching up)");
+  }
+}
+
 const endBalance = await publicClient.getBalance({address});
-console.log(`\n\nbalance  ${formatEther(endBalance)} ETH`);
+console.log(`\nbalance  ${formatEther(endBalance)} ETH`);
 console.log(`gained   ${formatEther(endBalance - startBalance)} ETH`);
