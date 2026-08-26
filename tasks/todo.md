@@ -85,3 +85,81 @@ Open, not addressed:
 - IPFS gateway reliability: `dweb.link`/`w3s.link`/`ipfs.io` intermittently
   refuse CORS from localhost and Pinata 404s some CIDs. Pre-existing, and the
   reason the deadline above matters.
+
+---
+
+# DRIFT Economy — Exact Payouts and Coherent Pricing
+
+Reported: the DRIFT figures on the results screen are wrong (+500/+300/+150/+50
+on a race whose real pool was 4 DRIFT). Two separate faults, plus a pricing pass.
+
+## Plan
+
+- [x] Trace where the results screen gets its numbers
+- [x] One source of truth for prices and the split, mirroring the contract
+- [x] Contract: rake and split to the chosen structure, fair on short fields
+- [x] Feed the results screen the escrow's own numbers, not a local estimate
+- [x] Price mint / entry / faucet coherently
+- [x] `pnpm contracts:test`, frontend typecheck, frontend build
+- [x] Docs
+
+## What was actually wrong
+
+1. **The numbers were never on-chain.** `raceStore.ts` hardcoded
+   `prizePool: 1000` and `RaceDirector.tsx` split *that* by 50/30/15/5. The
+   escrow's `RaceFinished` event — which carries the exact finish order and the
+   exact payouts — was read by nothing. `waitForRaceFinish` existed and was
+   never called; the waiting room polled `getRaceStatus` and threw the result
+   away.
+2. **The animation disagreed with the chain.** `App.tsx` passed
+   `getParticipants` (entry order) and claimed in a comment it was VRF finish
+   order, while `initializeRace` rolled its own winner with `selectWinner`. The
+   car the player watched win was not the car the contract paid.
+3. **Six-decimal formatter on an 18-decimal token.** `RaceWaitingRoom.tsx`
+   divided by `1e6` — a leftover from the Klever KDA. Every DRIFT figure in the
+   waiting room was off by 10^12.
+
+## Changes
+
+**`shared/src/utils/economy.ts` (new)** — prices, split constants,
+`calculateRacePayouts`, `formatDrift`. Reproduces `_creditPayouts` including its
+integer truncation, so a pre-race estimate matches the credited amount to the wei.
+
+**`RaceEscrow.sol`** — rake 5% → 10%; position shares restated against the gross
+pool (50/25/10/5, summing to 9000 bps with the rake as the residual 1000). Short
+fields renormalise the weights over the places actually filled: previously the
+3rd and 4th shares of a two-car race swept to the fee recipient, quietly turning
+a 5% rake into 25%. Only dust sweeps now.
+
+**Frontend** — `getRaceFinish` reads the `RaceFinished` log (bounded 500-block
+lookback; the public RPC caps `eth_getLogs` spans). The waiting room hands the
+settled result up; `App` builds the grid from it; the store takes it as the
+authoritative finish order and payout table; `RaceUI` formats wei.
+`RaceResult.payouts[].amount` and `RaceConfig.entryFee` are `bigint` wei now —
+a `number` of DRIFT cannot represent a payout exactly.
+
+**Prices** — mint 1 → 100 DRIFT, entry 1 → 25 DRIFT, faucet 100 → 500 DRIFT.
+Entry 25 makes a full grid stake exactly 100 DRIFT, so every prize is a whole
+number: 50 / 25 / 10 / 5, house 10. Winner doubles, 2nd breaks even. One faucet
+claim buys a car and sixteen entries.
+
+## Review
+
+- `pnpm contracts:test`: 54 passed. Two new tests — a full grid pays whole
+  multiples of the entry (2×/1×/0.4×/0.2×), and a short field keeps the rake at
+  exactly 10% instead of inflating it.
+- Value conservation verified for fields of 1–4 and for an indivisible entry fee
+  (`333333333333333333` wei): payouts + fee == pool in every case.
+- Frontend typecheck and `vite build` clean.
+- `forge fmt` still reports the six files it reported before this change; no new
+  violations.
+
+## Open
+
+- The exhibition run (no on-chain race, AI opponents) shows the payouts a real
+  race of that size would carry, but pays nothing. It is a demo path — worth a
+  visual marker on the results screen so the figures cannot be mistaken for
+  winnings.
+- The contract is not redeployed. The new rake, split and mint fee only take
+  effect after `pnpm contracts:deploy`; the entry fee is per-race and applies to
+  rooms created after the frontend ships.

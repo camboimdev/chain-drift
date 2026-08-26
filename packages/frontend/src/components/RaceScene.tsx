@@ -8,6 +8,7 @@ import { RaceDirector } from "./RaceDirector";
 import { RaceCamera } from "./RaceCamera";
 import { RaceUI } from "./RaceUI";
 import { useRaceStore } from "../stores/raceStore";
+import type { OnChainOutcome } from "../stores/raceStore";
 import { preloadCarModels } from "../services/carModelPreloader";
 import { TRACK_CONFIG } from "../config/trackConfig";
 import { calculateCarStats } from "@chain-drift/shared";
@@ -982,10 +983,12 @@ function RaceLoadingScreen({ assets }: { assets: AssetProgress | null }) {
 interface RaceSceneProps {
   cars: CarNFT[];
   userCarId: string;
+  /** Settled on-chain result. Absent for an exhibition run against AI cars. */
+  outcome?: OnChainOutcome;
   onReturnToGarage: () => void;
 }
 
-export function RaceScene({ cars, userCarId, onReturnToGarage }: RaceSceneProps) {
+export function RaceScene({ cars, userCarId, outcome, onReturnToGarage }: RaceSceneProps) {
   const { raceState, participants, initializeRace, startMatchmaking, startCountdown } =
     useRaceStore();
 
@@ -1002,9 +1005,9 @@ export function RaceScene({ cars, userCarId, onReturnToGarage }: RaceSceneProps)
 
   useEffect(() => {
     if (cars.length >= 1) {
-      initializeRace(cars.slice(0, 4), userCarId);
+      initializeRace(cars.slice(0, 4), userCarId, outcome);
     }
-  }, [cars, userCarId, initializeRace]);
+  }, [cars, userCarId, outcome, initializeRace]);
 
   // The countdown waits on the models, never on a fixed timer: a car that is
   // still a wireframe placeholder must not be on the starting grid.

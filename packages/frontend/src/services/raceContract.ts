@@ -220,6 +220,51 @@ export async function cancelRace(raceId: bigint): Promise<`0x${string}`> {
   return hash;
 }
 
+/**
+ * Blocks scanned back from the head when looking up a finished race.
+ *
+ * Providers cap the span of a single `eth_getLogs`, so this cannot ask for the
+ * whole chain. 500 blocks is ~17 minutes on Base — far more than the gap
+ * between a VRF callback landing and the UI asking about it.
+ */
+const FINISH_LOOKBACK_BLOCKS = 500n;
+
+/**
+ * The finish order and payouts of a race that has already resolved.
+ *
+ * Reads the `RaceFinished` log rather than recomputing the split: the escrow's
+ * numbers are the ones the player can actually claim, and rounding dust makes a
+ * local estimate drift from them.
+ *
+ * Returns null while the race is still unresolved.
+ */
+export async function getRaceFinish(raceId: bigint): Promise<RaceFinish | null> {
+  const publicClient = getPublicClient(wagmiConfig);
+  if (!publicClient) throw new Error("getRaceFinish: no public client configured");
+
+  const head = await publicClient.getBlockNumber();
+  const fromBlock = head > FINISH_LOOKBACK_BLOCKS ? head - FINISH_LOOKBACK_BLOCKS : 0n;
+
+  const logs = await publicClient.getContractEvents({
+    address: escrowAddress(),
+    abi: raceEscrowAbi,
+    eventName: "RaceFinished",
+    args: { raceId },
+    fromBlock,
+    toBlock: head,
+  });
+
+  const log = logs[logs.length - 1];
+  if (!log) return null;
+
+  return {
+    raceId,
+    players: log.args.players ?? [],
+    carTokenIds: log.args.carTokenIds ?? [],
+    payouts: log.args.payouts ?? [],
+  };
+}
+
 // ─── Waiting on the VRF callback ──────────────────────────────────────────
 
 /**

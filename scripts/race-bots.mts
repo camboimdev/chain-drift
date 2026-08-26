@@ -82,7 +82,7 @@ const MIN_GAS_WEI = parseEther("0.00005");
 const TOPUP_GAS_WEI = parseEther("0.0002");
 
 /** DRIFT floor per bot, over and above whatever a car costs to mint. */
-const MIN_DRIFT_WEI = parseEther("100");
+const MIN_DRIFT_WEI = parseEther("500");
 
 /** How many recent race IDs to check for unfinished business at start-up. */
 const ADOPT_SCAN = 20n;

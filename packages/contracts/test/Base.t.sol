@@ -13,7 +13,9 @@ import {Leaderboard} from "../src/Leaderboard.sol";
 abstract contract BaseTest is Test {
     bytes32 internal constant KEY_HASH = keccak256("gas-lane");
     uint256 internal constant MINT_FEE = 1e18;
-    uint128 internal constant ENTRY_FEE = 10e18;
+    /// @dev The production entry fee. A full grid stakes 100 DRIFT, which makes
+    ///      every position's share a whole number of tokens.
+    uint128 internal constant ENTRY_FEE = 25e18;
 
     address internal owner = makeAddr("owner");
     address internal feeRecipient = makeAddr("feeRecipient");

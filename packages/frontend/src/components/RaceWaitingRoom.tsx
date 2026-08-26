@@ -8,11 +8,18 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import type { OnChainParticipant } from "../services/raceContract";
+import {
+  calculateRacePayouts,
+  formatDrift,
+  PLATFORM_FEE_BPS,
+  BPS_DENOMINATOR,
+} from "@chain-drift/shared";
+import type { OnChainParticipant, RaceFinish } from "../services/raceContract";
 import {
   getRaceStatus,
   getParticipants,
   getRace,
+  getRaceFinish,
   requestResolve,
 } from "../services/raceContract";
 
@@ -31,15 +38,18 @@ function shortAddr(addr: string): string {
   return addr.slice(0, 10) + "..." + addr.slice(-6);
 }
 
-function formatDrift(microDrift: bigint): string {
-  return (Number(microDrift) / 1_000_000).toFixed(2) + " DRIFT";
-}
+const POSITION_LABELS = ["1ST", "2ND", "3RD", "4TH"] as const;
 
-export interface RaceResult {
-  /** Car token IDs in finish order (index 0 = winner). */
-  positions: number[];
-  /** Map from carTokenId to payout in wei. */
-  payouts: Record<number, bigint>;
+/**
+ * A position's share of the pool, as a percentage.
+ *
+ * Derived from the amount rather than read off the split constants: a room for
+ * fewer than four renormalises the weights, so a 1st place there takes a larger
+ * slice than the 50% the constant names.
+ */
+function shareOfPool(amount: bigint, pool: bigint): string {
+  if (pool === 0n) return "0%";
+  return `${Math.round(Number((amount * 1000n) / pool) / 10)}%`;
 }
 
 interface RaceWaitingRoomProps {
@@ -47,7 +57,7 @@ interface RaceWaitingRoomProps {
   entryFee: bigint;
   walletAddress: string;
   /** Called when the race is resolved on-chain — start the 3D animation */
-  onRaceResolved: (participants: OnChainParticipant[]) => void;
+  onRaceResolved: (finish: RaceFinish) => void;
   onCancel: () => void;
 }
 
@@ -112,8 +122,14 @@ export function RaceWaitingRoom({
       }
 
       if (status === "Paid") {
+        // The finish order and the payouts both come from the escrow's own
+        // `RaceFinished` log, so the animation and the results screen show what
+        // the contract actually credited.
+        const finish = await getRaceFinish(raceId);
+        if (!finish) return; // log not indexed yet — the next poll will catch it
+
         setPhase("done");
-        onRaceResolved(currentParticipants);
+        onRaceResolved(finish);
       }
     } catch (e) {
       console.error("[WaitingRoom] Poll error:", e);
@@ -128,8 +144,8 @@ export function RaceWaitingRoom({
   }, [poll, phase]);
 
   const slots = participants.length;
-  const prizePool = entryFee * BigInt(maxParticipants);
-  const distributable = prizePool - (prizePool * 5n / 100n);
+  const { prizePool, platformFee, payouts } = calculateRacePayouts(entryFee, maxParticipants);
+  const feePercent = Number((PLATFORM_FEE_BPS * 100n) / BPS_DENOMINATOR);
 
   return (
     <div
@@ -218,13 +234,9 @@ export function RaceWaitingRoom({
         <div style={{ fontSize: 7, letterSpacing: "0.25em", color: DS.textDisabled, marginBottom: 10 }}>
           PRIZE BREAKDOWN
         </div>
-        {[["1ST", "50%", distributable * 50n / 100n],
-          ["2ND", "30%", distributable * 30n / 100n],
-          ["3RD", "15%", distributable * 15n / 100n],
-          ["4TH", "5%",  distributable * 5n / 100n],
-        ].map(([pos, pct, amount]) => (
+        {payouts.map((amount, i) => (
           <div
-            key={String(pos)}
+            key={POSITION_LABELS[i]}
             style={{
               display: "flex",
               justifyContent: "space-between",
@@ -233,14 +245,16 @@ export function RaceWaitingRoom({
               borderBottom: `1px solid ${DS.border}`,
             }}
           >
-            <span style={{ color: DS.textDisabled, letterSpacing: "0.15em" }}>{String(pos)}</span>
-            <span style={{ color: DS.textMeta }}>{String(pct)}</span>
-            <span style={{ fontWeight: 700 }}>{formatDrift(amount as bigint)}</span>
+            <span style={{ color: DS.textDisabled, letterSpacing: "0.15em" }}>
+              {POSITION_LABELS[i]}
+            </span>
+            <span style={{ color: DS.textMeta }}>{shareOfPool(amount, prizePool)}</span>
+            <span style={{ fontWeight: 700 }}>{formatDrift(amount)} DRIFT</span>
           </div>
         ))}
         <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 8, fontSize: 7, color: DS.textDisabled }}>
-          <span>PLATFORM FEE 5%</span>
-          <span>{formatDrift(prizePool * 5n / 100n)}</span>
+          <span>POOL {formatDrift(prizePool)} · PLATFORM FEE {feePercent}%</span>
+          <span>{formatDrift(platformFee)} DRIFT</span>
         </div>
       </div>
 

@@ -8,7 +8,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import type { CarNFT } from "@chain-drift/shared";
-import { formatEther, parseEther } from "viem";
+import { formatDrift, RACE_ENTRY_FEE } from "@chain-drift/shared";
 import type { OnChainRace } from "../services/raceContract";
 import { getOpenRaces, createRace, enterRace } from "../services/raceContract";
 
@@ -22,13 +22,6 @@ const DS = {
   textDisabled: "#3A3A3A",
   font: "'JetBrains Mono', monospace",
 } as const;
-
-// Default entry fee: 1 DRIFT (ERC-20, 18 decimals)
-const DEFAULT_ENTRY_FEE = parseEther("1");
-
-function formatDrift(wei: bigint): string {
-  return Number(formatEther(wei)).toFixed(2) + " DRIFT";
-}
 
 interface RaceMultiplayerLobbyProps {
   playerCar: CarNFT;
@@ -71,7 +64,7 @@ export function RaceMultiplayerLobby({
     setCreating(true);
     setError(null);
     try {
-      await createRace(DEFAULT_ENTRY_FEE, 4);
+      await createRace(RACE_ENTRY_FEE, 4);
       // After creating, refresh and the new race will appear — then auto-join
       await refreshRaces();
       // Find the freshest open race (highest id) and join it
@@ -253,7 +246,7 @@ export function RaceMultiplayerLobby({
             transition: "background 150ms",
           }}
         >
-          {creating ? "CREATING RACE..." : `CREATE RACE · ${formatDrift(DEFAULT_ENTRY_FEE)} ENTRY`}
+          {creating ? "CREATING RACE..." : `CREATE RACE · ${formatDrift(RACE_ENTRY_FEE)} DRIFT ENTRY`}
         </button>
 
         <div
@@ -313,7 +306,7 @@ function RaceRow({
             letterSpacing: "0.15em",
           }}
         >
-          {formatDrift(race.entryFee)} ENTRY
+          {formatDrift(race.entryFee)} DRIFT ENTRY
         </div>
       </div>
 

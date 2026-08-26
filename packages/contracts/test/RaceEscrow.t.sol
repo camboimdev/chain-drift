@@ -112,19 +112,20 @@ contract RaceEscrowTest is BaseTest {
         assertEq(drift.balanceOf(address(escrow)), pool);
     }
 
-    function test_resolve_splitMatchesRaceLogicPercentages() public {
+    function test_resolve_splitMatchesEconomyPercentages() public {
         uint256 raceId = _fullRace();
         uint256 requestId = escrow.requestResolve(raceId);
         vrf.fulfillRandomWords(requestId, address(escrow));
 
+        // A full grid pays whole shares of the gross pool: 50 / 25 / 10 / 5,
+        // with the remaining 10 going to the platform.
         uint256 pool = ENTRY_FEE * 4;
-        uint256 distributable = pool - (pool * 500) / 10_000;
 
         uint256[4] memory expected = [
-            (distributable * 5000) / 10_000,
-            (distributable * 3000) / 10_000,
-            (distributable * 1500) / 10_000,
-            (distributable * 500) / 10_000
+            (pool * 5000) / 10_000,
+            (pool * 2500) / 10_000,
+            (pool * 1000) / 10_000,
+            (pool * 500) / 10_000
         ];
 
         // Finish order is random, so check the multiset of credited amounts.
@@ -135,9 +136,34 @@ contract RaceEscrowTest is BaseTest {
             escrow.pendingWithdrawals(dave)
         ];
         _assertSameMultiset(actual, expected);
+
+        // The platform takes exactly its rake, no more.
+        assertEq(escrow.pendingWithdrawals(feeRecipient), (pool * 1000) / 10_000, "rake drifted");
     }
 
-    function test_resolve_shortFieldSweepsRemainderToFeeRecipient() public {
+    function test_resolve_fullGridPaysWholeMultiplesOfTheEntry() public {
+        uint256 raceId = _fullRace();
+        uint256 requestId = escrow.requestResolve(raceId);
+        vrf.fulfillRandomWords(requestId, address(escrow));
+
+        // The split a player is shown in the UI: win doubles the stake, 2nd
+        // gets it back, 3rd keeps 40%, 4th keeps 20%.
+        uint256[4] memory expected = [
+            uint256(ENTRY_FEE) * 2,
+            uint256(ENTRY_FEE),
+            (uint256(ENTRY_FEE) * 40) / 100,
+            (uint256(ENTRY_FEE) * 20) / 100
+        ];
+        uint256[4] memory actual = [
+            escrow.pendingWithdrawals(alice),
+            escrow.pendingWithdrawals(bob),
+            escrow.pendingWithdrawals(carol),
+            escrow.pendingWithdrawals(dave)
+        ];
+        _assertSameMultiset(actual, expected);
+    }
+
+    function test_resolve_shortFieldKeepsTheRakeFlat() public {
         uint256 raceId = escrow.createRace(ENTRY_FEE, 2);
         vm.prank(alice);
         escrow.enterRace(raceId, aliceCar);
@@ -148,12 +174,28 @@ contract RaceEscrowTest is BaseTest {
         vrf.fulfillRandomWords(requestId, address(escrow));
 
         uint256 pool = ENTRY_FEE * 2;
+        uint256 platformFee = (pool * 1000) / 10_000;
         uint256 credited = escrow.pendingWithdrawals(alice) + escrow.pendingWithdrawals(bob)
             + escrow.pendingWithdrawals(feeRecipient);
 
-        // 3rd and 4th place shares have no claimant with only two racers.
         assertEq(credited, pool, "short field left value stranded");
-        assertGt(escrow.pendingWithdrawals(feeRecipient), (pool * 500) / 10_000);
+
+        // The 3rd and 4th shares have no claimant, so they are redistributed to
+        // the two racers instead of inflating the rake.
+        assertEq(
+            escrow.pendingWithdrawals(feeRecipient), platformFee, "short field inflated the rake"
+        );
+
+        uint256 distributable = pool - platformFee;
+        uint256 totalWeight = 5000 + 2500;
+        uint256[2] memory expected =
+            [(distributable * 5000) / totalWeight, (distributable * 2500) / totalWeight];
+        uint256[2] memory actualShort =
+            [escrow.pendingWithdrawals(alice), escrow.pendingWithdrawals(bob)];
+
+        bool inOrder = actualShort[0] == expected[0] && actualShort[1] == expected[1];
+        bool reversed = actualShort[0] == expected[1] && actualShort[1] == expected[0];
+        assertTrue(inOrder || reversed, "short field split mismatch");
     }
 
     function test_resolve_rejectsRaceThatIsNotLocked() public {
@@ -187,9 +229,7 @@ contract RaceEscrowTest is BaseTest {
             }
         }
 
-        uint256 pool = ENTRY_FEE * 4;
-        uint256 distributable = pool - (pool * 500) / 10_000;
-        assertEq(escrow.pendingWithdrawals(expectedWinner), (distributable * 5000) / 10_000);
+        assertEq(escrow.pendingWithdrawals(expectedWinner), (uint256(ENTRY_FEE) * 4 * 5000) / 10_000);
     }
 
     // ─── Claiming ───────────────────────────────────────────────────────────

@@ -23,10 +23,12 @@ export interface RaceParticipant {
 export interface RaceResult {
   winner: RaceParticipant;
   positions: RaceParticipant[];
-  prizePool: number;
+  /** Total staked by the field, in wei. */
+  prizePool: bigint;
   payouts: {
     participantId: string;
-    amount: number;
+    /** Credited to this car by the escrow, in wei. */
+    amount: bigint;
     position: number;
   }[];
 }
@@ -40,8 +42,7 @@ export interface RaceBet {
 export interface RaceConfig {
   trackLength: number;      // Total track length in units
   lapCount: number;         // Number of laps
-  prizePool: number;        // Total prize pool
-  entryFee: number;         // Fee to enter
+  entryFee: bigint;         // Stake per racer, in wei. The pool is this times the field.
   rubberBandStrength: number; // How much slower leaders get near finish (0-1)
   excitementFactor: number;   // How close the finish should feel (0-1)
 }

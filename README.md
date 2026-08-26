@@ -79,7 +79,8 @@ pnpm contracts:setup
 
 - **Base Sepolia ETH** — the [Coinbase Developer Platform faucet](https://portal.cdp.coinbase.com/products/faucet)
   gives 0.1 ETH per 24 h with a free account, no mainnet balance required.
-- **DRIFT** — call `faucet()` on the deployed token: 100 DRIFT per 12 h, no gatekeeping.
+- **DRIFT** — call `faucet()` on the deployed token: 500 DRIFT per 12 h, no gatekeeping.
+  That covers a car (100 DRIFT) and sixteen race entries (25 DRIFT each).
 
 Both the portal and the API pay **0.0001 ETH per claim**, against a cap of 1000
 claims per 24 h. Filling a wallet by hand therefore is not practical, so use

@@ -894,6 +894,7 @@ export function RaceDirector({ onRaceComplete }: RaceDirectorProps) {
     countdown,
     config,
     predeterminedPositions,
+    positionPayouts,
     setCountdown,
     startRace,
     finishRace,
@@ -957,10 +958,13 @@ export function RaceDirector({ onRaceComplete }: RaceDirectorProps) {
         finishRace({
           winner,
           positions: sortedByPosition,
-          prizePool: config.prizePool,
+          prizePool: config.entryFee * BigInt(participants.length),
+          // Amounts come from the store, which took them from the escrow's
+          // `RaceFinished` log — never recomputed here, so the screen cannot
+          // disagree with what the player can claim.
           payouts: sortedByPosition.map((p, i) => ({
             participantId: p.car.id,
-            amount: Math.floor(config.prizePool * [0.5, 0.3, 0.15, 0.05][i]),
+            amount: positionPayouts[i] ?? 0n,
             position: i + 1,
           })),
         });

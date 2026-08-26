@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useRaceStore } from "../stores/raceStore";
 import type { RaceParticipant, RaceResult } from "@chain-drift/shared";
+import { formatDrift } from "@chain-drift/shared";
 
 const DS = {
   bg: "#000000",
@@ -506,7 +507,7 @@ function FinishScreen({
                       color: DS.textPrimary,
                     }}
                   >
-                    +{payout?.amount ?? 0}
+                    +{formatDrift(payout?.amount ?? 0n)}
                   </div>
                   <div style={{ fontSize: 8, color: DS.textDisabled }}>DRIFT</div>
                 </div>
@@ -573,7 +574,7 @@ function FinishScreen({
                 color: DS.textPrimary,
               }}
             >
-              +{userPayout?.amount ?? 0} DRIFT
+              +{formatDrift(userPayout?.amount ?? 0n)} DRIFT
             </div>
           </div>
         )}

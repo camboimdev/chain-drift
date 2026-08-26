@@ -13,7 +13,10 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 ///      user transaction — no separate `approve` round trip.
 contract DriftToken is ERC20, ERC20Permit, Ownable {
     /// @notice Amount handed out per `faucet()` call. Testnet convenience only.
-    uint256 public constant FAUCET_AMOUNT = 100e18;
+    /// @dev Sized against the game's prices: one claim covers a car (100 DRIFT)
+    ///      and sixteen race entries (25 DRIFT each), so a new player can get
+    ///      through onboarding and a full session on a single claim.
+    uint256 public constant FAUCET_AMOUNT = 500e18;
 
     /// @notice Cooldown between two `faucet()` calls from the same address.
     uint256 public constant FAUCET_COOLDOWN = 12 hours;

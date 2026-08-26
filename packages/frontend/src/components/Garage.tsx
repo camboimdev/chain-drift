@@ -327,31 +327,21 @@ function GarageScene({
         );
       })}
 
-      {viewMode === "Gallery" ? (
-        <>
-          <GalleryCameraController />
-          <OrbitControls
-            makeDefault
-            enablePan={false}
-            enableZoom={false}
-            enableRotate={false}
-            maxPolarAngle={Math.PI / 2.1}
-          />
-        </>
-      ) : (
-        <>
-          <StudioCameraSetup />
-          <OrbitControls
-            makeDefault
-            enablePan={false}
-            enableZoom
-            enableRotate
-            minDistance={3}
-            maxDistance={20}
-            maxPolarAngle={Math.PI / 2.1}
-          />
-        </>
-      )}
+      {viewMode === "Gallery" ? <GalleryCameraController /> : <StudioCameraSetup />}
+
+      {/* One controls instance for both modes. React reuses it across the mode
+          switch, and any prop set in only one branch is reset — maxDistance
+          would come back as 0 and pin the camera onto the orbit target, i.e.
+          inside the car. Every prop is therefore spelled out for both modes. */}
+      <OrbitControls
+        makeDefault
+        enablePan={false}
+        enableZoom={viewMode === "Studio"}
+        enableRotate={viewMode === "Studio"}
+        minDistance={viewMode === "Studio" ? 3 : 0}
+        maxDistance={viewMode === "Studio" ? 20 : Infinity}
+        maxPolarAngle={Math.PI / 2.1}
+      />
     </>
   );
 }

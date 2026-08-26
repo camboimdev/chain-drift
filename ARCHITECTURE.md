@@ -48,8 +48,9 @@ All in `packages/contracts/src`, Solidity 0.8.28 on OpenZeppelin v5.
 `ERC20Permit` lets `CarNFT.mintWithPermit` and `RaceEscrow.enterRaceWithPermit`
 pull the fee from a signature, collapsing approve-then-act into one transaction.
 
-A `faucet()` gives 100 DRIFT per 12 h per address so a new player can mint and
-race without any manual distribution. **`setFaucetEnabled(false)` before any
+A `faucet()` gives 500 DRIFT per 12 h per address so a new player can mint and
+race without any manual distribution — one claim buys a car (100 DRIFT) and
+sixteen race entries (25 DRIFT each). **`setFaucetEnabled(false)` before any
 mainnet deployment.**
 
 ### CarNFT — ERC-721
@@ -78,18 +79,28 @@ Scoring, unchanged in spirit from the Klever version:
 `score = keccak256(randomWord, carTokenId)`, sorted descending. keccak replaces
 sha256 because it is far cheaper on the EVM.
 
-Prize split, mirroring `raceLogic.ts`:
+Prize split, mirroring `shared/src/utils/economy.ts`. Shares are of the **gross**
+pool, so the table reads directly against what a player staked:
 
-| Position | Share of distributable |
-| --- | --- |
-| 1st | 50% |
-| 2nd | 30% |
-| 3rd | 15% |
-| 4th | 5% |
+| Position | Share of pool | Return on a 25 DRIFT entry |
+| --- | --- | --- |
+| 1st | 50% | 50 DRIFT — double |
+| 2nd | 25% | 25 DRIFT — stake back |
+| 3rd | 10% | 10 DRIFT |
+| 4th | 5% | 5 DRIFT |
+| Platform | 10% | 10 DRIFT |
 
-A 5% platform fee comes off the pool first. With fewer than four racers the
-unclaimed position shares — and any integer-division dust — sweep to the fee
-recipient rather than being stranded in the contract.
+The default entry fee of 25 DRIFT makes a full grid stake exactly 100 DRIFT, so
+every prize is a whole number of tokens.
+
+With fewer than four racers the position weights are renormalised over the places
+that were filled: the platform still takes exactly 10%, and the missing places'
+shares go to the racers who turned up rather than inflating the rake. Only
+integer-division dust sweeps to the fee recipient, so nothing is stranded in the
+contract.
+
+The frontend never recomputes this split for a settled race. It reads the amounts
+out of the `RaceFinished` log, which is what the winner can actually claim.
 
 Three decisions worth knowing:
 

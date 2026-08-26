@@ -1,8 +1,28 @@
 import { create } from "zustand";
 import type { CarNFT, RaceState, RaceParticipant, RaceResult, RaceConfig, CameraState, CameraMode } from "@chain-drift/shared";
-import { calculateCarStats, calculateWinProbabilities, selectWinner } from "@chain-drift/shared";
+import {
+  calculateCarStats,
+  calculateRacePayouts,
+  calculateWinProbabilities,
+  selectWinner,
+  RACE_ENTRY_FEE,
+} from "@chain-drift/shared";
 import { TRACK_CONFIG } from "../config/trackConfig";
 import { enterRace } from "../services/raceContract";
+
+/**
+ * The settled result of an on-chain race, as emitted by `RaceFinished`.
+ *
+ * When present it is authoritative: the animation finishes in this order and
+ * the results screen shows these exact amounts. Without it the race is a local
+ * exhibition run and the outcome is simulated.
+ */
+export interface OnChainOutcome {
+  /** Car token IDs, index 0 = winner. */
+  carTokenIds: number[];
+  /** Payout credited to each position, in wei. Parallel to `carTokenIds`. */
+  payouts: bigint[];
+}
 
 interface RaceStore {
   // State
@@ -18,9 +38,11 @@ interface RaceStore {
   // Pre-determined race outcome
   predeterminedWinner: string | null;
   predeterminedPositions: string[]; // Car IDs in finish order
+  /** Payout per finishing position, in wei. Index 0 = winner. */
+  positionPayouts: bigint[];
 
   // Actions
-  initializeRace: (cars: CarNFT[], userCarId: string) => void;
+  initializeRace: (cars: CarNFT[], userCarId: string, outcome?: OnChainOutcome) => void;
   startMatchmaking: () => void;
   startCountdown: () => void;
   startRace: () => void;
@@ -43,8 +65,7 @@ interface RaceStore {
 const DEFAULT_CONFIG: RaceConfig = {
   trackLength: TRACK_CONFIG.totalDistance, // 1200m forward track
   lapCount: 1,
-  prizePool: 1000,
-  entryFee: 100,
+  entryFee: RACE_ENTRY_FEE,
   rubberBandStrength: 0.5,  // Stronger rubber banding for tight pack
   excitementFactor: 0.75,   // Earlier convergence for dramatic final quarter
 };
@@ -65,8 +86,9 @@ export const useRaceStore = create<RaceStore>((set) => ({
   config: DEFAULT_CONFIG,
   predeterminedWinner: null,
   predeterminedPositions: [],
+  positionPayouts: [],
 
-  initializeRace: (cars: CarNFT[], userCarId: string) => {
+  initializeRace: (cars: CarNFT[], userCarId: string, outcome?: OnChainOutcome) => {
     // Calculate stats and weights for each car
     // Assign lanes - spread across available lanes
     const laneCount = Math.min(cars.length, TRACK_CONFIG.laneCount);
@@ -97,15 +119,43 @@ export const useRaceStore = create<RaceStore>((set) => ({
       p.weight = weights[i];
     });
 
-    // Pre-determine the race outcome using weighted random
-    const winner = selectWinner(participantsWithStats);
-    const positions = generateRacePositions(participantsWithStats, winner.car.id);
+    // A settled race already has an outcome — Chainlink VRF picked it and the
+    // escrow paid it out. The animation replays that order rather than rolling
+    // its own, otherwise the car the player watches win is not the car the
+    // contract paid.
+    let positions: string[];
+    let positionPayouts: bigint[];
+
+    if (outcome && outcome.carTokenIds.length > 0) {
+      const byTokenId = new Map(participantsWithStats.map((p) => [p.car.tokenId, p.car.id]));
+      positions = outcome.carTokenIds
+        .map((tokenId) => byTokenId.get(tokenId))
+        .filter((id): id is string => id !== undefined);
+
+      // A car on the grid that the settled order does not name would otherwise
+      // sort to -1 and be drawn ahead of the winner. Park it at the back.
+      for (const p of participantsWithStats) {
+        if (!positions.includes(p.car.id)) positions.push(p.car.id);
+      }
+
+      positionPayouts = outcome.payouts;
+    } else {
+      const winner = selectWinner(participantsWithStats);
+      positions = generateRacePositions(participantsWithStats, winner.car.id);
+      // An exhibition run pays nothing, but it is shown at the stakes a real
+      // race of this size would carry.
+      positionPayouts = calculateRacePayouts(
+        DEFAULT_CONFIG.entryFee,
+        participantsWithStats.length
+      ).payouts;
+    }
 
     set({
       participants: participantsWithStats,
       userCarId,
-      predeterminedWinner: winner.car.id,
+      predeterminedWinner: positions[0] ?? null,
       predeterminedPositions: positions,
+      positionPayouts,
       raceState: "IDLE",
       result: null,
       countdown: 3,
@@ -164,6 +214,7 @@ export const useRaceStore = create<RaceStore>((set) => ({
       userCarId: null,
       predeterminedWinner: null,
       predeterminedPositions: [],
+      positionPayouts: [],
       camera: { mode: "OVERVIEW", targetCarId: null, transitionProgress: 0 },
       countdown: 3,
       elapsedTime: 0,

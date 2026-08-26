@@ -28,17 +28,20 @@ import {VRFV2PlusClient} from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/V
 ///      keeps the callback cheap and means no single recipient can make the
 ///      callback revert and strand the randomness.
 ///
-/// Payout split, mirroring `raceLogic.ts`:
-///   1st 50%   2nd 30%   3rd 15%   4th 5%
-///   Platform fee: 5% of the pool, taken before the split. Any remainder from a
-///   short field (fewer than 4 racers) goes to the fee recipient rather than
-///   being stranded in the contract.
+/// Payout split, mirroring `economy.ts`. Shares are of the **gross** pool, so
+/// on a full four-car grid they read straight off what the field staked:
+///   1st 50%   2nd 25%   3rd 10%   4th 5%   platform 10%
+///
+/// A short field renormalises the position weights over the places that were
+/// actually filled, so the platform still takes exactly `PLATFORM_FEE_BPS` and
+/// the missing places' shares go to the racers who turned up. Rounding dust is
+/// swept to the fee recipient rather than being stranded in the contract.
 contract RaceEscrow is VRFConsumerBaseV2Plus, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // ─── Constants ──────────────────────────────────────────────────────────
 
-    uint256 public constant PLATFORM_FEE_BPS = 500; // 5%
+    uint256 public constant PLATFORM_FEE_BPS = 1000; // 10%
     uint256 public constant BPS_DENOMINATOR = 10_000;
     uint8 public constant MAX_PARTICIPANTS = 4;
 
@@ -53,9 +56,10 @@ contract RaceEscrow is VRFConsumerBaseV2Plus, ReentrancyGuard {
     ///      indefinitely, and without this the stake would be locked forever.
     uint256 public constant VRF_CALLBACK_TIMEOUT = 1 hours;
 
+    /// @dev Shares of the gross pool; they sum to `10_000 - PLATFORM_FEE_BPS`.
     uint16 private constant PAYOUT_BPS_1ST = 5000;
-    uint16 private constant PAYOUT_BPS_2ND = 3000;
-    uint16 private constant PAYOUT_BPS_3RD = 1500;
+    uint16 private constant PAYOUT_BPS_2ND = 2500;
+    uint16 private constant PAYOUT_BPS_3RD = 1000;
     uint16 private constant PAYOUT_BPS_4TH = 500;
 
     // ─── Types ──────────────────────────────────────────────────────────────
@@ -371,20 +375,29 @@ contract RaceEscrow is VRFConsumerBaseV2Plus, ReentrancyGuard {
         uint256 platformFee = (prizePool * PLATFORM_FEE_BPS) / BPS_DENOMINATOR;
         uint256 distributable = prizePool - platformFee;
 
+        // Weights are renormalised over the places that were filled. Dividing by
+        // BPS_DENOMINATOR instead would hand the 3rd and 4th shares of a short
+        // field to the fee recipient, quietly turning a 10% rake into 25% on a
+        // two-car race.
+        uint256 totalWeight;
+        for (uint256 i = 0; i < n; ++i) {
+            totalWeight += _payoutBps(i);
+        }
+
         payouts = new uint256[](n);
         uint256 distributed;
 
         for (uint256 i = 0; i < n; ++i) {
             uint256 bps = _payoutBps(i);
             if (bps == 0) continue;
-            uint256 amount = (distributable * bps) / BPS_DENOMINATOR;
+            uint256 amount = (distributable * bps) / totalWeight;
             payouts[i] = amount;
             distributed += amount;
             pendingWithdrawals[players[i]] += amount;
         }
 
-        // A field of fewer than 4 leaves the unclaimed positions' share behind,
-        // as does integer division. Sweep it with the fee rather than stranding it.
+        // Integer division leaves dust behind. Sweep it with the fee rather
+        // than stranding it in the contract.
         pendingWithdrawals[feeRecipient] += platformFee + (distributable - distributed);
     }
 

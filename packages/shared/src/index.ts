@@ -52,7 +52,22 @@ export {
   calculateLaneDrift,
   isCornerPosition,
   generateRaceEvents,
-  calculatePayouts,
 } from "./utils/raceLogic";
 
 export type { AIBoostState, RaceEvent } from "./utils/raceLogic";
+
+// Economy — prices and prize splits, mirroring the on-chain constants
+export {
+  DRIFT_DECIMALS,
+  drift,
+  CAR_MINT_FEE,
+  RACE_ENTRY_FEE,
+  BPS_DENOMINATOR,
+  PLATFORM_FEE_BPS,
+  PAYOUT_BPS,
+  MAX_PARTICIPANTS,
+  calculateRacePayouts,
+  formatDrift,
+} from "./utils/economy";
+
+export type { RacePayoutBreakdown } from "./utils/economy";

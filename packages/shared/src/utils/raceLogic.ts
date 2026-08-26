@@ -365,20 +365,3 @@ export function generateRaceEvents(
   
   return events;
 }
-
-/**
- * Calculate prize distribution based on positions
- */
-export function calculatePayouts(
-  prizePool: number,
-  positions: RaceParticipant[]
-): { participantId: string; amount: number; position: number }[] {
-  // Prize distribution: 50%, 30%, 15%, 5%
-  const distribution = [0.5, 0.3, 0.15, 0.05];
-  
-  return positions.map((p, index) => ({
-    participantId: p.car.id,
-    amount: Math.floor(prizePool * (distribution[index] ?? 0)),
-    position: index + 1,
-  }));
-}
