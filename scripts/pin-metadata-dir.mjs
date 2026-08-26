@@ -12,15 +12,18 @@
  * CarNFT.tokenURI appends the token ID to the base URI, resolving as:
  *   {collection_metadata_uri}/{nonce}
  *
- * After this script, run ONE transaction to point the collection at the folder:
- *   cast send $CAR_NFT_ADDRESS "setBaseURI(string)" "ipfs://{folderCID}/" \
- *     --rpc-url $BASE_SEPOLIA_RPC_URL --mnemonic "$MNEMONIC"
+ * After this script, set TOKEN_BASE_URI to "ipfs://{folderCID}/" in
+ * packages/contracts/.env and run ONE transaction to point the collection at
+ * the folder:
+ *   pnpm --filter @chain-drift/contracts set-base-uri:base-sepolia
  *
  * Usage:
  *   node scripts/pin-metadata-dir.mjs
  *
  * Env (loaded from packages/metadata-api/.env):
  *   PINATA_API_KEY, PINATA_API_SECRET
+ *   PIPELINE_COLLECTION_DIR — render pipeline output/collection folder
+ *   IPFS_GATEWAY            — gateway used for the printed verification URLs
  */
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -52,9 +55,21 @@ if (!PINATA_API_KEY || !PINATA_API_SECRET) {
   process.exit(1);
 }
 
-const IPFS_GATEWAY     = "https://ipfs.io/ipfs";
-const COLLECTION_DIR   = join(ROOT, "chain_drift_pipeline/output/collection");
-const CACHE_PATH       = join(ROOT, "packages/metadata-api/collection-cache.json");
+// Only used for the verification URLs printed at the end. The metadata itself
+// carries `ipfs://` URIs so every consumer resolves them through its own
+// gateway instead of depending on one that may be rate limited or down.
+const IPFS_GATEWAY   = process.env.IPFS_GATEWAY ?? "https://gateway.pinata.cloud/ipfs";
+// The render pipeline lives outside this repo; point PIPELINE_COLLECTION_DIR at
+// its output/collection folder.
+const COLLECTION_DIR = process.env.PIPELINE_COLLECTION_DIR
+  ?? join(ROOT, "chain_drift_pipeline/output/collection");
+const CACHE_PATH     = join(ROOT, "packages/metadata-api/collection-cache.json");
+
+if (!existsSync(COLLECTION_DIR)) {
+  console.error(`Collection dir not found: ${COLLECTION_DIR}`);
+  console.error("Set PIPELINE_COLLECTION_DIR to the render pipeline output/collection folder.");
+  process.exit(1);
+}
 
 // ─── Load collection cache ────────────────────────────────────────────────────
 
@@ -78,13 +93,13 @@ for (const nonce of nonces) {
 
   const raw = JSON.parse(readFileSync(metaPath, "utf8"));
 
-  // Replace relative paths with full IPFS URLs from the cache.
-  raw.image         = `${IPFS_GATEWAY}/${entry.image}`;
-  raw.animation_url = `${IPFS_GATEWAY}/${entry.model}`;
+  // Replace relative paths with the gateway-agnostic IPFS URIs from the cache.
+  raw.image         = `ipfs://${entry.image}`;
+  raw.animation_url = `ipfs://${entry.model}`;
   if (raw.properties?.files) {
     raw.properties.files = raw.properties.files.map((f) => {
-      if (f.type === "image/png")         return { ...f, uri: `${IPFS_GATEWAY}/${entry.image}` };
-      if (f.type === "model/gltf-binary") return { ...f, uri: `${IPFS_GATEWAY}/${entry.model}` };
+      if (f.type === "image/png")         return { ...f, uri: `ipfs://${entry.image}` };
+      if (f.type === "model/gltf-binary") return { ...f, uri: `ipfs://${entry.model}` };
       return f;
     });
   }
@@ -145,8 +160,8 @@ console.log("Verify a token:");
 console.log(`  ${IPFS_GATEWAY}/${folderCid}/6`);
 console.log("");
 console.log("Set on-chain (run this once):");
-console.log(`  cast send $CAR_NFT_ADDRESS "setBaseURI(string)" "ipfs://${folderCid}/" \\`);
-console.log(`      --rpc-url $BASE_SEPOLIA_RPC_URL --mnemonic "$MNEMONIC"`);
+console.log(`  1. TOKEN_BASE_URI=ipfs://${folderCid}/   in packages/contracts/.env`);
+console.log(`  2. pnpm --filter @chain-drift/contracts set-base-uri:base-sepolia`);
 
 // Save the folder CID for reference
 const out = { folderCid, metadataBaseUri: `${IPFS_GATEWAY}/${folderCid}`, count: entries.length };

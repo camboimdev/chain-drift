@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {BaseTest} from "./Base.t.sol";
 import {CarNFT} from "../src/CarNFT.sol";
 import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
+import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 contract CarNFTTest is BaseTest {
     function test_mint_chargesFeeAndAssignsSequentialIds() public {
@@ -158,6 +159,40 @@ contract CarNFTTest is BaseTest {
     function test_tokenURI_appendsTokenId() public {
         (, uint256 car) = _newPlayer("alice", 100e18);
         assertEq(carNft.tokenURI(car), "https://meta.test/1");
+    }
+
+    /// @dev Explorers cache `tokenURI` when they first index a token, so a
+    ///      `setBaseURI` leaves older tokens showing stale metadata until they
+    ///      see another `Transfer`. Transferring a car to its own owner emits
+    ///      that event; this pins down that it costs nothing else — ownership,
+    ///      balance and the enumeration indices all have to survive intact.
+    function test_transferToSelf_onlyReEmitsTransfer() public {
+        address alice = makeAddr("alice");
+        vm.prank(owner);
+        drift.mint(alice, 100e18);
+
+        vm.startPrank(alice);
+        drift.approve(address(carNft), type(uint256).max);
+        uint256 first = carNft.mint("sport");
+        uint256 second = carNft.mint("street");
+
+        vm.expectEmit(true, true, true, true, address(carNft));
+        emit IERC721.Transfer(alice, alice, first);
+        carNft.transferFrom(alice, alice, first);
+        vm.stopPrank();
+
+        assertEq(carNft.ownerOf(first), alice);
+        assertEq(carNft.balanceOf(alice), 2);
+        assertEq(carNft.totalSupply(), 2);
+
+        // The enumeration keeps its order: a self-transfer must not shuffle the
+        // garage or drop a token out of the global index.
+        uint256[] memory owned = carNft.tokensOfOwner(alice);
+        assertEq(owned.length, 2);
+        assertEq(owned[0], first);
+        assertEq(owned[1], second);
+        assertEq(carNft.tokenByIndex(0), first);
+        assertEq(carNft.tokenByIndex(1), second);
     }
 
     function test_setMintFee_onlyOwner() public {

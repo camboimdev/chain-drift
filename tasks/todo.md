@@ -89,6 +89,30 @@ collision, but unproven.
       `InvalidSubscription()`. `RaceEscrow` now provisions its own subscription
       in its constructor, keeping it to one atomic transaction.
 
+## Race bots (2026-08-26) — opponents for live testing
+
+`scripts/race-bots.mts`, wired as `pnpm bots`. Derives three accounts from the
+deployer's `MNEMONIC` at fixed indices 100–102, provisions each with gas, DRIFT
+and a car, then polls `getOpenRaces` and enters them into any open room. Fixed
+indices keep the same drivers and the same cars across runs.
+
+Verified on Base Sepolia across three races (2, 4 and 5):
+
+- Bots filled three of four seats and held the last one until a non-bot address
+  entered, then the room locked.
+- Locked rooms were resolved by the bots, the classification printed from
+  `RaceFinished`, and every bot's `pendingWithdrawals` claimed.
+- Killing the script mid-race and restarting it cold picked race 5 back up out
+  of `Locked` and carried it through to `Paid`.
+
+Two things the load-balanced RPC forced:
+
+- `send()` holds until `getBlockNumber` reaches the receipt's block. Without it
+  `eth_estimateGas` for a mint ran on a node that had not seen the `approve`
+  yet, and the run died on `ERC20InsufficientAllowance`.
+- The minted token ID comes out of the receipt's `CarMinted` log. Reading
+  `tokensOfOwner` back returned an empty array often enough to matter.
+
 ## Next
 
 - [ ] Wire the DRIFT faucet button into `GarageEmptyState` for new players

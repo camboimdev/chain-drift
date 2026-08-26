@@ -150,6 +150,29 @@ cp packages/oracle/.env.example packages/oracle/.env
 pnpm --filter @chain-drift/oracle dev
 ```
 
+### 6. Put opponents on the grid (optional)
+
+```bash
+pnpm bots
+```
+
+An empty lobby cannot be tested. `scripts/race-bots.mts` derives three accounts
+from the same `MNEMONIC` at fixed indices — 100, 101 and 102 — funds them with
+gas and DRIFT, mints each a car, then watches the chain and enters them into any
+open race room. Fixed indices mean the same three drivers in the same three cars
+on every run, so a lobby is recognisable rather than a fresh set of strangers.
+
+They leave one seat open until a non-bot address has entered, so the room is
+still joinable from the browser, and resolve a full room themselves — printing
+the classification and claiming their winnings.
+
+```bash
+pnpm bots --status   # roster, balances and cars; no transactions
+pnpm bots --setup    # provision the grid, then exit
+pnpm bots --fill     # take every seat, for a race with no human in it
+pnpm bots --race 7   # only join race 7
+```
+
 ## Development
 
 ```bash

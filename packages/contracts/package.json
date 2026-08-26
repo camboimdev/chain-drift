@@ -11,6 +11,9 @@
     "fmt": "forge fmt",
     "lint": "forge fmt --check",
     "deploy:base-sepolia": "forge script script/Deploy.s.sol:Deploy --rpc-url base_sepolia --broadcast --verify -vvv",
-    "deploy:base": "forge script script/Deploy.s.sol:Deploy --rpc-url base --broadcast --verify -vvv"
+    "deploy:base": "forge script script/Deploy.s.sol:Deploy --rpc-url base --broadcast --verify -vvv",
+    "set-base-uri:base-sepolia": "forge script script/SetBaseURI.s.sol:SetBaseURI --rpc-url base_sepolia --broadcast -vvv",
+    "set-base-uri:base": "forge script script/SetBaseURI.s.sol:SetBaseURI --rpc-url base --broadcast -vvv",
+    "refresh-metadata:base-sepolia": "forge script script/RefreshMetadata.s.sol:RefreshMetadata --rpc-url base_sepolia --broadcast -vvv"
   }
 }

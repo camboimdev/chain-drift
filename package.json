@@ -13,10 +13,13 @@
     "contracts:test": "pnpm --filter @chain-drift/contracts test",
     "contracts:deploy": "pnpm --filter @chain-drift/contracts deploy:base-sepolia",
     "faucet": "node scripts/faucet.mjs",
-    "sync-env": "node scripts/sync-env.mjs"
+    "sync-env": "node scripts/sync-env.mjs",
+    "bots": "tsx scripts/race-bots.mts"
   },
   "devDependencies": {
+    "@chain-drift/shared": "workspace:*",
     "@coinbase/cdp-sdk": "^1.55.0",
+    "tsx": "^4.23.12",
     "turbo": "^2.5.0",
     "viem": "^2.21.0"
   }
