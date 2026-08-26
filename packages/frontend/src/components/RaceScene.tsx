@@ -1,17 +1,14 @@
 import { Canvas } from "@react-three/fiber";
 import { Environment, Stars } from "@react-three/drei";
-import {
-  EffectComposer,
-  Bloom,
-  Vignette,
-  ChromaticAberration,
-} from "@react-three/postprocessing";
+import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import { BlendFunction } from "postprocessing";
+import { ACESFilmicToneMapping } from "three";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { RaceDirector } from "./RaceDirector";
 import { RaceCamera } from "./RaceCamera";
 import { RaceUI } from "./RaceUI";
 import { useRaceStore } from "../stores/raceStore";
+import { preloadCarModels } from "../services/carModelPreloader";
 import { TRACK_CONFIG } from "../config/trackConfig";
 import { calculateCarStats } from "@chain-drift/shared";
 import type { CarNFT } from "@chain-drift/shared";
@@ -66,6 +63,19 @@ const RACE_CSS = `
 @keyframes cd-bar-fill {
   from { width: 0%; }
   to   { width: var(--bar-w); }
+}
+@keyframes cd-bar-sweep {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(500%); }
+}
+
+.cd-bar-sweep {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 20%;
+  animation: cd-bar-sweep 1.2s ease-in-out infinite;
 }
 
 .cd-blink { animation: cd-blink 1s step-end infinite; }
@@ -699,15 +709,87 @@ function RaceLobby({
   );
 }
 
+// ─── Asset Preload ────────────────────────────────────────────────
+// Real progress of the car GLB preload, shared by the matchmaking and
+// loading screens. `null` means nothing is in flight yet.
+interface AssetProgress {
+  loaded: number;
+  total: number;
+  done: boolean;
+}
+
+// Floor for the matchmaking screen so its staged steps (up to 1050ms) read
+// even when every model is already cached.
+const MATCHMAKING_MIN_MS = 2000;
+
+// Ceiling on the asset gate. Waiting on the models is right — a wireframe
+// placeholder must not be on the starting grid — but IPFS can degrade to
+// four gateways timing out in sequence, and holding the player on a loading
+// screen for minutes is a worse failure than racing a car that never loaded.
+// Past this deadline the race starts with whatever arrived.
+const ASSET_DEADLINE_MS = 20000;
+
 // ─── Matchmaking Screen ───────────────────────────────────────────
 const MATCHMAKING_STEPS = [
-  { label: "CONNECTING TO BASE NETWORK", status: "OK", delay: 0 },
-  { label: "VERIFYING CAR NFT OWNERSHIP", status: "OK", delay: 350 },
-  { label: "VALIDATING ENTRY FEE ESCROW", status: "OK", delay: 700 },
-  { label: "SCANNING FOR OPPONENTS", status: "...", delay: 1050 },
+  { label: "CONNECTING TO BASE NETWORK", delay: 0 },
+  { label: "VERIFYING CAR NFT OWNERSHIP", delay: 350 },
+  { label: "VALIDATING ENTRY FEE ESCROW", delay: 700 },
+  { label: "SCANNING FOR OPPONENTS", delay: 1050 },
 ] as const;
 
-function MatchmakingScreen() {
+// The asset step is last: it is the one the countdown actually waits on.
+const ASSET_STEP_DELAY = 1400;
+const STEP_DELAYS = [...MATCHMAKING_STEPS.map((s) => s.delay), ASSET_STEP_DELAY];
+
+function TerminalStep({
+  label,
+  status,
+  visible,
+  ok,
+}: {
+  label: string;
+  status: string;
+  visible: boolean;
+  ok: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: "8px 0",
+        borderBottom: `1px solid ${DS.divider}`,
+        animation: visible ? `cd-step-in 200ms ease-out both` : undefined,
+        opacity: visible ? 1 : 0,
+        transition: "opacity 100ms",
+      }}
+    >
+      <span
+        style={{
+          fontSize: 9,
+          color: DS.textMeta,
+          letterSpacing: "0.08em",
+        }}
+      >
+        {">"} {label}
+      </span>
+      <span
+        style={{
+          fontSize: 9,
+          fontWeight: 700,
+          color: ok ? DS.accent : DS.textDisabled,
+          letterSpacing: "0.12em",
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        [{status}]
+      </span>
+    </div>
+  );
+}
+
+function MatchmakingScreen({ assets }: { assets: AssetProgress | null }) {
   useEffect(() => {
     injectStyles();
   }, []);
@@ -715,11 +797,18 @@ function MatchmakingScreen() {
   const [visibleCount, setVisibleCount] = useState(0);
 
   useEffect(() => {
-    MATCHMAKING_STEPS.forEach((step, i) => {
-      const timer = setTimeout(() => setVisibleCount(i + 1), step.delay);
-      return () => clearTimeout(timer);
-    });
+    const timers = STEP_DELAYS.map((delay, i) =>
+      setTimeout(() => setVisibleCount(i + 1), delay)
+    );
+    return () => timers.forEach(clearTimeout);
   }, []);
+
+  const assetDone   = assets?.done ?? false;
+  const assetStatus = !assets
+    ? "..."
+    : assetDone
+      ? "OK"
+      : `${assets.loaded}/${assets.total}`;
 
   return (
     <div
@@ -769,43 +858,20 @@ function MatchmakingScreen() {
       {/* Terminal steps */}
       <div style={{ width: 420, maxWidth: "90vw" }}>
         {MATCHMAKING_STEPS.map((step, i) => (
-          <div
-            key={i}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: "8px 0",
-              borderBottom: `1px solid ${DS.divider}`,
-              animation:
-                i < visibleCount
-                  ? `cd-step-in 200ms ease-out both`
-                  : undefined,
-              opacity: i < visibleCount ? 1 : 0,
-              transition: "opacity 100ms",
-            }}
-          >
-            <span
-              style={{
-                fontSize: 9,
-                color: DS.textMeta,
-                letterSpacing: "0.08em",
-              }}
-            >
-              {">"} {step.label}
-            </span>
-            <span
-              style={{
-                fontSize: 9,
-                fontWeight: 700,
-                color: step.status === "OK" ? DS.accent : DS.textDisabled,
-                letterSpacing: "0.12em",
-              }}
-            >
-              [{step.status}]
-            </span>
-          </div>
+          <TerminalStep
+            key={step.label}
+            label={step.label}
+            status="OK"
+            visible={i < visibleCount}
+            ok
+          />
         ))}
+        <TerminalStep
+          label="STREAMING CAR ASSETS"
+          status={assetStatus}
+          visible={visibleCount > MATCHMAKING_STEPS.length}
+          ok={assetDone}
+        />
       </div>
 
       {/* Blinking status */}
@@ -817,7 +883,7 @@ function MatchmakingScreen() {
           letterSpacing: "0.18em",
         }}
       >
-        FINDING OPPONENTS
+        {assetDone ? "GRID READY" : "LOADING RACERS"}
         <span className="cd-blink" style={{ marginLeft: 4 }}>
           ▮
         </span>
@@ -827,28 +893,18 @@ function MatchmakingScreen() {
 }
 
 // ─── Loading Screen ───────────────────────────────────────────────
-function RaceLoadingScreen() {
+function RaceLoadingScreen({ assets }: { assets: AssetProgress | null }) {
   useEffect(() => {
     injectStyles();
   }, []);
 
-  const [progress, setProgress] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setProgress((p) => {
-        const next = p + Math.random() * 18 + 4;
-        if (next >= 100) {
-          clearInterval(interval);
-          return 100;
-        }
-        return next;
-      });
-    }, 90);
-    return () => clearInterval(interval);
-  }, []);
-
-  const pct = Math.round(progress);
+  // Without a preload in flight there is nothing honest to report, so the bar
+  // sweeps instead of inventing a percentage.
+  const total = assets?.total ?? 0;
+  const determinate = total > 0;
+  const pct = determinate
+    ? Math.round(((assets?.loaded ?? 0) / total) * 100)
+    : 0;
 
   return (
     <div
@@ -886,17 +942,21 @@ function RaceLoadingScreen() {
             marginBottom: 12,
           }}
         >
-          <div
-            style={{
-              position: "absolute",
-              left: 0,
-              top: 0,
-              bottom: 0,
-              width: `${pct}%`,
-              background: DS.textPrimary,
-              transition: "width 80ms linear",
-            }}
-          />
+          {determinate ? (
+            <div
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: `${pct}%`,
+                background: DS.textPrimary,
+                transition: "width 200ms linear",
+              }}
+            />
+          ) : (
+            <div className="cd-bar-sweep" style={{ background: DS.textPrimary }} />
+          )}
         </div>
 
         <div
@@ -910,7 +970,7 @@ function RaceLoadingScreen() {
         >
           <span>LOADING RACE PROTOCOL</span>
           <span style={{ fontVariantNumeric: "tabular-nums" }}>
-            {String(pct).padStart(3, " ")}%
+            {determinate ? `${String(pct).padStart(3, " ")}%` : "---%"}
           </span>
         </div>
       </div>
@@ -929,17 +989,62 @@ export function RaceScene({ cars, userCarId, onReturnToGarage }: RaceSceneProps)
   const { raceState, participants, initializeRace, startMatchmaking, startCountdown } =
     useRaceStore();
 
+  const [assets, setAssets] = useState<AssetProgress | null>(null);
+  const startedRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   useEffect(() => {
     if (cars.length >= 1) {
       initializeRace(cars.slice(0, 4), userCarId);
     }
   }, [cars, userCarId, initializeRace]);
 
+  // The countdown waits on the models, never on a fixed timer: a car that is
+  // still a wireframe placeholder must not be on the starting grid.
   const handleStartRace = () => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+
     startMatchmaking();
-    setTimeout(() => {
-      startCountdown();
-    }, 2000);
+    setAssets({ loaded: 0, total: 0, done: false });
+
+    const preloaded = preloadCarModels(
+      participants.map((p) => p.car.tokenId),
+      (loaded, total) => {
+        if (mountedRef.current) setAssets({ loaded, total, done: false });
+      }
+    ).then(() => {
+      if (mountedRef.current) {
+        setAssets((prev) => ({
+          loaded: prev?.total ?? 0,
+          total: prev?.total ?? 0,
+          done: true,
+        }));
+      }
+    });
+
+    const minimumOnScreen = new Promise<void>((resolve) =>
+      setTimeout(resolve, MATCHMAKING_MIN_MS)
+    );
+    const deadline = new Promise<void>((resolve) =>
+      setTimeout(resolve, ASSET_DEADLINE_MS)
+    );
+
+    // Race on the assets, but never past the deadline. `preloadCarModels`
+    // always resolves, so the only thing the deadline guards against is a
+    // gateway that hangs rather than fails.
+    const assetsReady = Promise.race([preloaded, deadline]);
+
+    Promise.all([assetsReady, minimumOnScreen]).then(() => {
+      if (mountedRef.current) startCountdown();
+    });
   };
 
   if (raceState === "IDLE" && participants.length > 0) {
@@ -953,11 +1058,11 @@ export function RaceScene({ cars, userCarId, onReturnToGarage }: RaceSceneProps)
   }
 
   if (raceState === "MATCHMAKING") {
-    return <MatchmakingScreen />;
+    return <MatchmakingScreen assets={assets} />;
   }
 
   if (participants.length === 0) {
-    return <RaceLoadingScreen />;
+    return <RaceLoadingScreen assets={assets} />;
   }
 
   return (
@@ -970,20 +1075,23 @@ export function RaceScene({ cars, userCarId, onReturnToGarage }: RaceSceneProps)
           alpha: false,
           powerPreference: "high-performance",
           stencil: false,
+          toneMapping: ACESFilmicToneMapping,
         }}
         dpr={[1, 1.5]}
       >
         <Suspense fallback={null}>
-          <color attach="background" args={["#030312"]} />
-          <fog attach="fog" args={["#030312", 40, 200]} />
+          <color attach="background" args={["#08090B"]} />
+          {/* Neutral haze that only bites past the last rendered chunk
+              (visibleChunks * chunkLength), so asphalt stays solid ahead. */}
+          <fog attach="fog" args={["#08090B", 140, 460]} />
           <Stars
             radius={400}
             depth={150}
-            count={4000}
-            factor={4}
-            saturation={0.3}
+            count={1600}
+            factor={3}
+            saturation={0}
             fade
-            speed={0.3}
+            speed={0.15}
           />
           <Environment preset="night" />
           <ambientLight intensity={0.08} color="#4488ff" />
@@ -997,9 +1105,11 @@ export function RaceScene({ cars, userCarId, onReturnToGarage }: RaceSceneProps)
             }
           />
           <EffectComposer>
+            {/* Only emissive trackside elements clear the threshold — the
+                asphalt must not bloom into a white haze. */}
             <Bloom
-              intensity={0.8}
-              luminanceThreshold={0.4}
+              intensity={0.4}
+              luminanceThreshold={0.68}
               luminanceSmoothing={0.9}
               mipmapBlur
             />
@@ -1007,12 +1117,6 @@ export function RaceScene({ cars, userCarId, onReturnToGarage }: RaceSceneProps)
               offset={0.3}
               darkness={0.6}
               blendFunction={BlendFunction.NORMAL}
-            />
-            <ChromaticAberration
-              offset={[0.0005, 0.0005]}
-              blendFunction={BlendFunction.NORMAL}
-              radialModulation={true}
-              modulationOffset={0.5}
             />
           </EffectComposer>
         </Suspense>

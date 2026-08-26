@@ -48,7 +48,7 @@ export function CarPreview({ tokenId }: CarPreviewProps) {
         <pointLight position={[0, 3, 0]} intensity={0.3} />
 
         <Suspense fallback={null}>
-          <Car3D tokenId={tokenId} position={[0, 0, 0]} />
+          <Car3D tokenId={tokenId} position={[0, 0, 0]} interactive />
         </Suspense>
       </Canvas>
     </div>

@@ -272,6 +272,7 @@ function GarageScene({
             tokenId={featuredCar.tokenId}
             position={[0, 0.1, 0]}
             isSelected
+            interactive
           />
         </group>
       )}
@@ -309,6 +310,7 @@ function GarageScene({
                   tokenId={slot.car.tokenId}
                   position={[0, 0.5, 0]}
                   isSelected
+                  interactive
                   onClick={() => onCarOpen(slot.car.id)}
                 />
               </Float>
@@ -317,6 +319,7 @@ function GarageScene({
                 tokenId={slot.car.tokenId}
                 position={[0, 0.1, 0]}
                 dimmed
+                interactive
                 onClick={isExiting ? undefined : () => onCarSelect(slot.car.id)}
               />
             )}
