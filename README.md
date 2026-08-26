@@ -79,28 +79,30 @@ pnpm contracts:setup
 
 - **Base Sepolia ETH** — the [Coinbase Developer Platform faucet](https://portal.cdp.coinbase.com/products/faucet)
   gives 0.1 ETH per 24 h with a free account, no mainnet balance required.
-- **Testnet LINK** for the VRF subscription — [faucets.chain.link](https://faucets.chain.link/base-sepolia).
 - **DRIFT** — call `faucet()` on the deployed token: 100 DRIFT per 12 h, no gatekeeping.
 
-### 3. Set up Chainlink VRF
+No LINK required. `RaceEscrow` requests randomness with `nativePayment` on, so
+the VRF subscription is funded in ETH like everything else.
 
-1. Create a subscription at [vrf.chain.link](https://vrf.chain.link) on Base Sepolia.
-2. Fund it with testnet LINK.
-3. Deploy (below), then add the `RaceEscrow` address as a consumer.
+Budget roughly **0.05 ETH**: ~6.6M gas for the deploy (about 0.00005 ETH at Base
+Sepolia's usual 0.006 gwei) plus whatever you put into the VRF subscription.
 
-### 4. Deploy
+### 3. Deploy
 
 ```bash
 cp packages/contracts/.env.example packages/contracts/.env
-# fill in PRIVATE_KEY and VRF_SUBSCRIPTION_ID
+# fill in PRIVATE_KEY — use a burner from `cast wallet new`, never a mnemonic
 
 cd packages/contracts
 forge script script/Deploy.s.sol:Deploy --rpc-url base_sepolia --broadcast --verify
 ```
 
-Addresses land in `packages/contracts/deployments/84532.json`.
+The script creates the VRF subscription, deploys the four contracts, registers
+`RaceEscrow` as a consumer and funds the subscription with `VRF_FUND_WEI` — one
+command from nothing to a playable game. Addresses land in
+`packages/contracts/deployments/84532.json`.
 
-### 5. Run the game
+### 4. Run the game
 
 ```bash
 cp packages/frontend/.env.example packages/frontend/.env.local
@@ -109,7 +111,7 @@ cp packages/frontend/.env.example packages/frontend/.env.local
 pnpm dev
 ```
 
-### 6. Run the leaderboard recorder (optional)
+### 5. Run the leaderboard recorder (optional)
 
 ```bash
 cp packages/oracle/.env.example packages/oracle/.env

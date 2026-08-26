@@ -419,6 +419,19 @@ export const raceEscrowAbi = [
   },
   {
     "type": "function",
+    "name": "nativePayment",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "nextRaceId",
     "inputs": [],
     "outputs": [
@@ -606,6 +619,11 @@ export const raceEscrowAbi = [
         "name": "requestConfirmations_",
         "type": "uint16",
         "internalType": "uint16"
+      },
+      {
+        "name": "nativePayment_",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "outputs": [],
@@ -873,6 +891,12 @@ export const raceEscrowAbi = [
         "type": "uint16",
         "indexed": false,
         "internalType": "uint16"
+      },
+      {
+        "name": "nativePayment",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
       }
     ],
     "anonymous": false

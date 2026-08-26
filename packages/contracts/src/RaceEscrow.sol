@@ -101,6 +101,12 @@ contract RaceEscrow is VRFConsumerBaseV2Plus, ReentrancyGuard {
     uint32 public callbackGasLimit = 500_000;
     uint16 public requestConfirmations = 3;
 
+    /// @notice Pay for randomness in the chain's native token instead of LINK.
+    /// @dev Defaults to true. VRF v2.5 bills a native-funded subscription in ETH,
+    ///      which removes the LINK faucet from the path to a working testnet —
+    ///      the same ETH that pays for gas also pays for the randomness.
+    bool public nativePayment = true;
+
     // ─── Errors ─────────────────────────────────────────────────────────────
 
     error InvalidMaxPlayers(uint8 maxPlayers);
@@ -129,7 +135,13 @@ contract RaceEscrow is VRFConsumerBaseV2Plus, ReentrancyGuard {
     event RaceCancelled(uint256 indexed raceId);
     event Claimed(address indexed account, uint256 amount);
     event FeeRecipientSet(address indexed newRecipient);
-    event VrfConfigSet(uint256 subscriptionId, bytes32 keyHash, uint32 callbackGasLimit, uint16 requestConfirmations);
+    event VrfConfigSet(
+        uint256 subscriptionId,
+        bytes32 keyHash,
+        uint32 callbackGasLimit,
+        uint16 requestConfirmations,
+        bool nativePayment
+    );
 
     // ─── Init ───────────────────────────────────────────────────────────────
 
@@ -239,7 +251,7 @@ contract RaceEscrow is VRFConsumerBaseV2Plus, ReentrancyGuard {
                 callbackGasLimit: callbackGasLimit,
                 numWords: 1,
                 extraArgs: VRFV2PlusClient._argsToBytes(
-                    VRFV2PlusClient.ExtraArgsV1({nativePayment: false})
+                    VRFV2PlusClient.ExtraArgsV1({nativePayment: nativePayment})
                 )
             })
         );
@@ -419,12 +431,16 @@ contract RaceEscrow is VRFConsumerBaseV2Plus, ReentrancyGuard {
         uint256 subscriptionId_,
         bytes32 keyHash_,
         uint32 callbackGasLimit_,
-        uint16 requestConfirmations_
+        uint16 requestConfirmations_,
+        bool nativePayment_
     ) external onlyOwner {
         subscriptionId = subscriptionId_;
         keyHash = keyHash_;
         callbackGasLimit = callbackGasLimit_;
         requestConfirmations = requestConfirmations_;
-        emit VrfConfigSet(subscriptionId_, keyHash_, callbackGasLimit_, requestConfirmations_);
+        nativePayment = nativePayment_;
+        emit VrfConfigSet(
+            subscriptionId_, keyHash_, callbackGasLimit_, requestConfirmations_, nativePayment_
+        );
     }
 }

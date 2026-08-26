@@ -289,6 +289,32 @@ contract RaceEscrowTest is BaseTest {
         assertEq(escrow.getOpenRaces(10, 30).length, 0);
     }
 
+    // ─── VRF config ─────────────────────────────────────────────────────────
+
+    function test_vrfConfig_defaultsToNativePayment() public view {
+        // A native-funded subscription is billed in ETH, so a working testnet
+        // needs no LINK at all.
+        assertTrue(escrow.nativePayment());
+    }
+
+    function test_setVrfConfig_onlyOwnerAndUpdatesEveryField() public {
+        address escrowOwner = escrow.owner();
+
+        vm.prank(escrowOwner);
+        escrow.setVrfConfig(99, keccak256("other-lane"), 800_000, 5, false);
+
+        assertEq(escrow.subscriptionId(), 99);
+        assertEq(escrow.keyHash(), keccak256("other-lane"));
+        assertEq(escrow.callbackGasLimit(), 800_000);
+        assertEq(escrow.requestConfirmations(), 5);
+        assertFalse(escrow.nativePayment());
+
+        address mallory = makeAddr("mallory");
+        vm.prank(mallory);
+        vm.expectRevert();
+        escrow.setVrfConfig(1, KEY_HASH, 500_000, 3, true);
+    }
+
     // ─── Helpers ────────────────────────────────────────────────────────────
 
     function _fullRace() private returns (uint256 raceId) {

@@ -29,7 +29,10 @@ abstract contract BaseTest is Test {
     function setUp() public virtual {
         vrf = new VRFCoordinatorV2_5Mock(0.1 ether, 1e9, 4e15);
         subId = vrf.createSubscription();
-        vrf.fundSubscription(subId, 100 ether);
+        // RaceEscrow requests randomness with nativePayment on, so the
+        // subscription has to hold native balance, not LINK.
+        vm.deal(address(this), 100 ether);
+        vrf.fundSubscriptionWithNative{value: 100 ether}(subId);
 
         vm.startPrank(owner);
         drift = new DriftToken(1_000_000e18, owner, true);
