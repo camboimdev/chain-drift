@@ -15,6 +15,12 @@
  *   node scripts/faucet.mjs --target 0.05
  *   node scripts/faucet.mjs --address 0x1234... --target 0.02
  *   node scripts/faucet.mjs --claims 10          # fixed number of claims
+ *   node scripts/faucet.mjs --target 0.03 --max-minutes 120
+ *
+ * The faucet refuses in bursts — roughly ten claims, then a cooldown — so a
+ * large top-up is a long grind. The script waits out each rate limit with an
+ * exponential backoff and gives up only when `--max-minutes` runs out
+ * (default 30), keeping whatever has already landed.
  *
  * Env (packages/contracts/.env is loaded automatically):
  *   CDP_API_KEY_ID, CDP_API_KEY_SECRET   from https://portal.cdp.coinbase.com
@@ -35,11 +41,21 @@ const repoRoot = resolve(here, "..");
 /** Amount the CDP faucet pays per ETH claim. */
 const WEI_PER_CLAIM = 100_000_000_000_000n; // 0.0001 ETH
 
-/** Documented cap. Refuse to exceed it rather than collecting 429s. */
+/**
+ * Documented cap. Refuse to exceed it rather than collecting 429s.
+ *
+ * The real limiter is far tighter — measured at ~10 claims before
+ * `RequestEvmFaucet` starts refusing — so this is only an upper sanity bound.
+ * The backoff below is what actually governs throughput.
+ */
 const MAX_CLAIMS_PER_DAY = 1000;
 
 /** Gap between claims. Sequential and unhurried, so this reads as a top-up. */
 const DELAY_MS = 250;
+
+/** Backoff after a rate limit, doubling up to the cap. */
+const BACKOFF_START_MS = 30_000;
+const BACKOFF_MAX_MS = 300_000;
 
 // ─── .env loading ───────────────────────────────────────────────────────────
 
@@ -74,12 +90,13 @@ loadEnv(resolve(repoRoot, ".env"));
 // ─── Args ───────────────────────────────────────────────────────────────────
 
 function parseArgs(argv) {
-  const args = {target: null, claims: null, address: null};
+  const args = {target: null, claims: null, address: null, maxMinutes: null};
   for (let i = 0; i < argv.length; i++) {
     const next = () => argv[++i];
     if (argv[i] === "--target") args.target = next();
     else if (argv[i] === "--claims") args.claims = Number(next());
     else if (argv[i] === "--address") args.address = next();
+    else if (argv[i] === "--max-minutes") args.maxMinutes = Number(next());
     else if (argv[i] === "--help" || argv[i] === "-h") args.help = true;
   }
   return args;
@@ -167,21 +184,14 @@ if (args.claims != null) {
 if (claimsNeeded > MAX_CLAIMS_PER_DAY) {
   fail(
     `That target needs ${claimsNeeded} claims, above the documented ` +
-      `${MAX_CLAIMS_PER_DAY}/24h cap.\n` +
-      "Use https://portal.cdp.coinbase.com/products/faucet instead — the portal " +
-      "pays 0.1 ETH in a single claim."
+      `${MAX_CLAIMS_PER_DAY}/24h cap. Lower --target and run again tomorrow.`
   );
 }
+
+const maxMinutes = args.maxMinutes ?? 30;
 
 console.log(`claims   ${claimsNeeded} x ${formatEther(WEI_PER_CLAIM)} ETH`);
-
-if (claimsNeeded > 50) {
-  console.log(
-    `\nNote: ${claimsNeeded} API calls at 0.0001 ETH each.\n` +
-      "The web portal pays 0.1 ETH in one click: " +
-      "https://portal.cdp.coinbase.com/products/faucet"
-  );
-}
+console.log(`patience ${maxMinutes} min`);
 
 if (!process.env.CDP_API_KEY_ID || !process.env.CDP_API_KEY_SECRET) {
   fail(
@@ -209,10 +219,21 @@ function reportProgress(done, total) {
   }
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const isRateLimit = (message) =>
+  /rate limit|429|too many requests/i.test(message);
+
+const deadline = Date.now() + maxMinutes * 60_000;
+
 let claimed = 0;
 let lastTxHash = null;
+let backoff = BACKOFF_START_MS;
+let gaveUp = null;
 
-for (let i = 0; i < claimsNeeded; i++) {
+// A rate limit is a pause, not a failure: the faucet refuses in bursts and
+// reopens, so the loop waits it out rather than abandoning a half-done top-up.
+while (claimed < claimsNeeded) {
   try {
     const response = await cdp.evm.requestFaucet({
       address,
@@ -221,16 +242,35 @@ for (let i = 0; i < claimsNeeded; i++) {
     });
     claimed++;
     lastTxHash = response?.transactionHash ?? lastTxHash;
+    backoff = BACKOFF_START_MS;
     reportProgress(claimed, claimsNeeded);
+    if (claimed < claimsNeeded) await sleep(DELAY_MS);
+    continue;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    // A rate limit is the expected stopping condition, not a crash: keep
-    // whatever already landed and report it.
-    console.log(`\n\nStopped after ${claimed} claims: ${message}`);
-    break;
+
+    if (!isRateLimit(message)) {
+      gaveUp = message;
+      break;
+    }
+
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      gaveUp = `out of time after ${maxMinutes} min`;
+      break;
+    }
+
+    const wait = Math.min(backoff, BACKOFF_MAX_MS, remaining);
+    console.log(
+      `\nrate limited at ${claimed}/${claimsNeeded} — waiting ${Math.round(wait / 1000)}s ` +
+        `(${Math.round(remaining / 60_000)} min left)`
+    );
+    await sleep(wait);
+    backoff = Math.min(backoff * 2, BACKOFF_MAX_MS);
   }
-  if (i < claimsNeeded - 1) await new Promise((r) => setTimeout(r, DELAY_MS));
 }
+
+if (gaveUp) console.log(`\nStopped after ${claimed} claims: ${gaveUp}`);
 
 // `requestFaucet` returns once the claim is accepted, not once it is mined.
 // Reading the balance straight away reports the balance from before the run.
