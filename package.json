@@ -12,7 +12,8 @@
     "contracts:build": "pnpm --filter @chain-drift/contracts build",
     "contracts:test": "pnpm --filter @chain-drift/contracts test",
     "contracts:deploy": "pnpm --filter @chain-drift/contracts deploy:base-sepolia",
-    "faucet": "node scripts/faucet.mjs"
+    "faucet": "node scripts/faucet.mjs",
+    "sync-env": "node scripts/sync-env.mjs"
   },
   "devDependencies": {
     "@coinbase/cdp-sdk": "^1.55.0",

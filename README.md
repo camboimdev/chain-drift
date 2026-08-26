@@ -133,11 +133,15 @@ command from nothing to a playable game. Addresses land in
 ### 4. Run the game
 
 ```bash
-cp packages/frontend/.env.example packages/frontend/.env.local
-# paste the deployed addresses
-
+node scripts/sync-env.mjs   # copies the deployed addresses into the env files
 pnpm dev
 ```
+
+`sync-env.mjs` reads `packages/contracts/deployments/<chainId>.json` and rewrites
+the address lines in `packages/frontend/.env.local` and `packages/oracle/.env`,
+creating either from its `.env.example` when missing and leaving every other
+setting alone. Run it after every deploy — four addresses across two files is
+how a frontend ends up silently pointed at a previous deployment.
 
 ### 5. Run the leaderboard recorder (optional)
 
