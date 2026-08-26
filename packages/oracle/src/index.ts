@@ -13,18 +13,21 @@
 
 import { leaderboardAbi, raceEscrowAbi } from "@chain-drift/shared";
 import { createPublicClient, createWalletClient, http } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { mnemonicToAccount } from "viem/accounts";
 import {
   CHAIN,
   LEADERBOARD_ADDRESS,
+  MNEMONIC,
+  MNEMONIC_INDEX,
   POLL_INTERVAL_MS,
   RACE_ESCROW_ADDRESS,
-  RECORDER_PRIVATE_KEY,
   RPC_URL,
   START_BLOCK,
 } from "./config.js";
 
-const account = privateKeyToAccount(RECORDER_PRIVATE_KEY);
+// Same BIP-44 path Foundry's `deriveKey` uses, so index 0 is the deployer —
+// the address `Leaderboard.setRecorder` defaults to.
+const account = mnemonicToAccount(MNEMONIC, { addressIndex: MNEMONIC_INDEX });
 
 const publicClient = createPublicClient({
   chain: CHAIN,

@@ -14,7 +14,7 @@
  *
  * After this script, run ONE transaction to point the collection at the folder:
  *   cast send $CAR_NFT_ADDRESS "setBaseURI(string)" "ipfs://{folderCID}/" \
- *     --rpc-url $BASE_SEPOLIA_RPC_URL --private-key $PRIVATE_KEY
+ *     --rpc-url $BASE_SEPOLIA_RPC_URL --mnemonic "$MNEMONIC"
  *
  * Usage:
  *   node scripts/pin-metadata-dir.mjs
@@ -146,7 +146,7 @@ console.log(`  ${IPFS_GATEWAY}/${folderCid}/6`);
 console.log("");
 console.log("Set on-chain (run this once):");
 console.log(`  cast send $CAR_NFT_ADDRESS "setBaseURI(string)" "ipfs://${folderCid}/" \\`);
-console.log(`      --rpc-url $BASE_SEPOLIA_RPC_URL --private-key $PRIVATE_KEY`);
+console.log(`      --rpc-url $BASE_SEPOLIA_RPC_URL --mnemonic "$MNEMONIC"`);
 
 // Save the folder CID for reference
 const out = { folderCid, metadataBaseUri: `${IPFS_GATEWAY}/${folderCid}`, count: entries.length };

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
+import {DeployerKey} from "./DeployerKey.sol";
 import {IVRFSubscriptionV2Plus} from
     "@chainlink/contracts/src/v0.8/vrf/dev/interfaces/IVRFSubscriptionV2Plus.sol";
 import {DriftToken} from "../src/DriftToken.sol";
@@ -21,11 +21,12 @@ import {Leaderboard} from "../src/Leaderboard.sol";
 /// pays for the randomness and no LINK faucet is involved.
 ///
 /// Required env:
-///   PRIVATE_KEY           deployer key
+///   MNEMONIC              deployer seed phrase (BIP-44, m/44'/60'/0'/0/index)
 ///   VRF_COORDINATOR       Chainlink VRF v2.5 coordinator for this chain
 ///   VRF_KEY_HASH          gas lane key hash
 ///
 /// Optional env:
+///   MNEMONIC_INDEX        account index to derive (default 0)
 ///   VRF_SUBSCRIPTION_ID   reuse an existing subscription instead of creating one
 ///   VRF_FUND_WEI          native funding for a newly created subscription
 ///                         (default 0.01 ether; 0 skips funding)
@@ -34,7 +35,7 @@ import {Leaderboard} from "../src/Leaderboard.sol";
 ///   TOKEN_BASE_URI        metadata base URI (default the local metadata-api)
 ///   FAUCET_ENABLED        open the DRIFT faucet (default true)
 ///   RECORDER_ADDRESS      leaderboard recorder (default the deployer)
-contract Deploy is Script {
+contract Deploy is DeployerKey {
     struct Config {
         address deployer;
         address vrfCoordinator;
@@ -57,7 +58,7 @@ contract Deploy is Script {
     }
 
     function run() external {
-        uint256 deployerKey = vm.envUint("PRIVATE_KEY");
+        uint256 deployerKey = deployerPrivateKey();
         Config memory cfg = _readConfig(vm.addr(deployerKey));
 
         _logPreflight(cfg);

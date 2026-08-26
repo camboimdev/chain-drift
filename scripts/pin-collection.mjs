@@ -14,7 +14,8 @@
  * Full publishing flow:
  *   1. node scripts/pin-collection.mjs [--force]   ← this script
  *   2. node scripts/pin-metadata-dir.mjs           ← packages metadata dir
- *   3. cast send $CAR_NFT "setBaseURI(string)" "ipfs://{folderCID}/"
+ *   3. cast send $CAR_NFT_ADDRESS "setBaseURI(string)" "ipfs://{folderCID}/"
+ *        --rpc-url $BASE_SEPOLIA_RPC_URL --mnemonic "$MNEMONIC"
  *
  * Usage:
  *   node scripts/pin-collection.mjs [--concurrency 3] [--force]

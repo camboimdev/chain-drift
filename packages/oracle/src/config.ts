@@ -28,11 +28,16 @@ export const RPC_URL = process.env.RPC_URL ?? CHAIN.rpcUrls.default.http[0];
 export const RACE_ESCROW_ADDRESS = requireAddress("RACE_ESCROW_ADDRESS");
 export const LEADERBOARD_ADDRESS = requireAddress("LEADERBOARD_ADDRESS");
 
-/** Recorder key. Must be the address set via `Leaderboard.setRecorder`. */
-export const RECORDER_PRIVATE_KEY = (() => {
-  const key = requireEnv("RECORDER_PRIVATE_KEY");
-  return (key.startsWith("0x") ? key : `0x${key}`) as `0x${string}`;
-})();
+/**
+ * Seed phrase for the recorder, and the account index to derive from it.
+ *
+ * The same mnemonic the contracts were deployed with, so index 0 is already the
+ * address `Leaderboard.setRecorder` was pointed at. Use a different index only
+ * if you set a different recorder.
+ */
+export const MNEMONIC = requireEnv("MNEMONIC");
+
+export const MNEMONIC_INDEX = Number(process.env.MNEMONIC_INDEX ?? 0);
 
 /**
  * Block to start from on a cold start.

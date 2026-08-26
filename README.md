@@ -91,9 +91,19 @@ Sepolia's usual 0.006 gwei) plus whatever you put into the VRF subscription.
 
 ```bash
 cp packages/contracts/.env.example packages/contracts/.env
-# fill in PRIVATE_KEY — use a burner from `cast wallet new`, never a mnemonic
+# fill in MNEMONIC — a seed phrase created for this project alone
+```
 
+Check which address it derives, and fund that one:
+
+```bash
 cd packages/contracts
+forge script script/ShowDeployer.s.sol --rpc-url base_sepolia
+```
+
+Then deploy:
+
+```bash
 forge script script/Deploy.s.sol:Deploy --rpc-url base_sepolia --broadcast --verify
 ```
 
