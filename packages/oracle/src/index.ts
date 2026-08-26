@@ -29,6 +29,14 @@ import {
 // the address `Leaderboard.setRecorder` defaults to.
 const account = mnemonicToAccount(MNEMONIC, { addressIndex: MNEMONIC_INDEX });
 
+/** Blocks to stay behind the head, so a short reorg cannot strand a race. */
+const CONFIRMATIONS = 3n;
+
+/** Largest range asked for in one call; providers cap `eth_getLogs` spans. */
+const MAX_BLOCK_RANGE = 500n;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const publicClient = createPublicClient({
   chain: CHAIN,
   transport: http(RPC_URL),
@@ -126,21 +134,56 @@ async function main(): Promise<void> {
   }
 
   console.log("watching for RaceFinished…\n");
-  publicClient.watchContractEvent({
-    address: RACE_ESCROW_ADDRESS,
-    abi: raceEscrowAbi,
-    eventName: "RaceFinished",
-    pollingInterval: POLL_INTERVAL_MS,
-    onLogs: (logs) => {
+  await watchLoop();
+}
+
+/**
+ * Scan forward over block ranges, one window at a time.
+ *
+ * Deliberately not `watchContractEvent`: that installs a server-side filter and
+ * polls it with `eth_getFilterChanges`. Public RPCs sit behind load balancers,
+ * so the follow-up poll routinely lands on a node that never saw the filter and
+ * fails with "filter not found" — which is exactly what Base Sepolia's endpoint
+ * does. Tracking the last processed block and asking for explicit ranges works
+ * on any provider, survives a restart, and makes progress observable.
+ */
+async function watchLoop(): Promise<void> {
+  let lastProcessed = await publicClient.getBlockNumber();
+
+  for (;;) {
+    await sleep(POLL_INTERVAL_MS);
+
+    try {
+      const head = await publicClient.getBlockNumber();
+      // Stay behind the head so a short reorg cannot strand a recorded race on
+      // an orphaned block. recordResult is idempotent, so a re-scan is harmless.
+      const target = head - CONFIRMATIONS;
+      if (target <= lastProcessed) continue;
+
+      const from = lastProcessed + 1n;
+      const to = target - from > MAX_BLOCK_RANGE ? from + MAX_BLOCK_RANGE : target;
+
+      const logs = await publicClient.getContractEvents({
+        address: RACE_ESCROW_ADDRESS,
+        abi: raceEscrowAbi,
+        eventName: "RaceFinished",
+        fromBlock: from,
+        toBlock: to,
+      });
+
       for (const log of logs) {
-        // One failure must not stop the watcher; the next race still records.
-        void recordRace(log).catch((err) =>
+        await recordRace(log).catch((err) =>
           console.error("[recorder] failed to record race:", err)
         );
       }
-    },
-    onError: (err) => console.error("[recorder] watch error:", err),
-  });
+
+      lastProcessed = to;
+    } catch (err) {
+      // A transient RPC failure must not kill the recorder; the same range is
+      // retried on the next tick because lastProcessed did not advance.
+      console.error("[recorder] poll failed, retrying:", err instanceof Error ? err.message : err);
+    }
+  }
 }
 
 main().catch((err) => {

@@ -31,30 +31,40 @@ New repository. The Klever implementation stays in `chain-drift` and is frozen.
 - [x] Open-race discovery cost three RPC calls per candidate ID. Now one
       `getOpenRaces` call on-chain.
 
-## Base Sepolia playtest (2026-08-25)
-
-Deployed and driven end to end from one wallet with `script/Playtest.s.sol`.
+## Base Sepolia playtest (2026-08-25) — full loop verified
 
 | Contract | Address |
 | --- | --- |
-| DriftToken | `0x7A0F50a1aB69E633Cc6C9FE46A8a261Dbfa3bb4A` |
-| CarNFT | `0xcfB59EC458e9f0B93a18D9c9D34Fc62DC5777F5e` |
-| RaceEscrow | `0x3C0d382F26835502a8213164045Be0d882Cf7267` |
-| Leaderboard | `0xa49754A5CFC78213b7068Dbba73BEa8d6A2bfD48` |
+| DriftToken | `0x8a205974fB7CfEE92FCBc6275D79491e79b61210` |
+| CarNFT | `0x869E8CacaaB1F0852e1059Abc099290317BE2c20` |
+| RaceEscrow | `0x431BA67942ceB3b0b624265C3edA836183fC2Fb0` |
+| Leaderboard | `0x54A29Bcc632063a4dFb34f0f23D0d67365067109` |
 
-Worked: deploy (0.0000434 ETH), self-provisioned VRF subscription (owner and
-consumer both the escrow), mint, createRace, enterRace, lock on a full grid,
-requestResolve.
+Two races driven end to end from a single wallet via `script/Playtest.s.sol`
+with `maxPlayers = 1`: mint, createRace, enterRace, lock, requestResolve, VRF
+callback, claim, leaderboard.
 
-Stopped at the VRF callback. The DON reserves `callbackGasLimit` at the **gas
-lane's max price** — 30 gwei on Base Sepolia's only lane — when deciding whether
-a subscription can afford a request. ~0.022 ETH reserved per request against a
-0.00003 ETH balance, so the request was accepted on-chain and then sat pending.
-Nothing was misconfigured; `pendingRequestExists` was true and the subscription
-was billed nothing.
+Measured on-chain:
 
-Redeploy once the wallet holds ~0.05 ETH; the deployed contracts predate the two
-fixes below.
+| | |
+| --- | --- |
+| Deploy (4 contracts + wiring) | 0.0000434 ETH |
+| VRF subscription funded | 0.025 ETH |
+| VRF billed **per race** | 0.000001755 ETH |
+| Time to fulfilment | ~20 s |
+| Leaderboard after 2 races | 2 wins, 2 races, 0.95 DRIFT |
+
+The subscription balance is a **reserve, not a spend**: the DON gates on
+`callbackGasLimit` priced at the gas lane's 30 gwei max, but bills real gas at
+~0.006 gwei. 0.025 ETH covers ~14,000 races of actual billing.
+
+Escrow ends holding exactly the 1 DRIFT staked in a still-open race; every
+settled race left it at zero.
+
+An unexplained note, not a known bug: race 2 came out with `maxParticipants = 4`
+though every call in this deployment passed 1. It behaved correctly for a
+4-player room. Suspected fallout from forge retrying after an EOA nonce
+collision, but unproven.
 
 ## Fixed by the playtest
 
@@ -65,6 +75,11 @@ fixes below.
 - [x] `callbackGasLimit` dropped 500k → 300k against a measured ~195k
       four-player fulfilment. The limit is not just a safety bound — it sets the
       balance the DON demands before it will fulfil at all.
+- [x] The recorder's live watch used `watchContractEvent`, which installs an
+      RPC filter and polls it with `eth_getFilterChanges`. Base Sepolia's
+      endpoint is load balanced, so the follow-up poll landed on a node that
+      never saw the filter: `filter not found`, every tick. It now scans
+      explicit block ranges from a tracked cursor, three blocks behind the head.
 - [x] `Deploy.s.sol` recorded the **simulated** VRF subscription ID into
       `deployments/<chainId>.json`. A subscription ID derives from
       `blockhash(block.number - 1)`, so the recorded value never matches the one
@@ -76,18 +91,16 @@ fixes below.
 
 ## Next
 
-- [ ] Top the deployer up to ~0.05 ETH and redeploy with the fixes
-- [ ] Fund the VRF subscription above the 30 gwei lane reserve (~0.03 ETH)
-- [ ] Fill `packages/frontend/.env.local` with the redeployed addresses
-- [ ] Finish the end-to-end run through resolve → claim → leaderboard
-- [ ] Verify contracts on Basescan (needs `BASESCAN_API_KEY`)
-- [ ] Wire a DRIFT faucet button into `GarageEmptyState` for new players
+- [ ] Wire the DRIFT faucet button into `GarageEmptyState` for new players
 - [ ] Surface `pendingWithdrawals` and a claim button in `WalletHeader`
-- [ ] Handle the `isWrongNetwork` state in the UI (`switchToGameChain` is wired
-      in the context but no component calls it yet)
+- [ ] Handle `isWrongNetwork` in the UI (`switchToGameChain` is in the context
+      but no component calls it)
+- [ ] Load the frontend in a browser against the live deployment — only the
+      module graph has been verified, not a real wallet session
+- [ ] Verify contracts on Basescan (needs `BASESCAN_API_KEY`)
 - [ ] Re-pin the collection and `setBaseURI` to the IPFS folder
 - [ ] Clear the lint debt inherited from the Klever repo (10 errors, all
-      pre-existing: `RaceTrack.tsx`, `RaceWaitingRoom.tsx`, `WalletContext.tsx`)
+      pre-existing)
 
 ## Notes
 
@@ -96,3 +109,6 @@ fixes below.
 - Race IDs and car token IDs are `bigint` in the frontend now, not `number`.
 - Race resolution is asynchronous: `requestResolve` returns before the result
   exists. Wait on `RaceFinished` (`waitForRaceFinish`), not on the transaction.
+- Base Sepolia's public RPC is load balanced. Anything stateful across calls —
+  RPC filters especially — breaks on it, and a read straight after a write can
+  hit a lagging node.
