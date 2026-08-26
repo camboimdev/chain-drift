@@ -3,8 +3,6 @@ pragma solidity 0.8.28;
 
 import {console2} from "forge-std/console2.sol";
 import {DeployerKey} from "./DeployerKey.sol";
-import {IVRFSubscriptionV2Plus} from
-    "@chainlink/contracts/src/v0.8/vrf/dev/interfaces/IVRFSubscriptionV2Plus.sol";
 import {DriftToken} from "../src/DriftToken.sol";
 import {CarNFT} from "../src/CarNFT.sol";
 import {RaceEscrow} from "../src/RaceEscrow.sol";
@@ -14,11 +12,11 @@ import {Leaderboard} from "../src/Leaderboard.sol";
 ///         subscription, and writes the addresses to `deployments/<chainid>.json`
 ///         for the frontend and the recorder to read.
 ///
-/// The subscription is created and funded here rather than through the
-/// Chainlink UI so a fresh chain goes from nothing to a playable game in one
-/// command. It is funded in **native ETH** — VRF v2.5 bills a native-funded
-/// subscription in the chain's own token, so the ETH that pays for gas also
-/// pays for the randomness and no LINK faucet is involved.
+/// RaceEscrow creates and owns its VRF subscription in its own constructor, so
+/// a fresh chain goes from nothing to a playable game in one command with no
+/// visit to the Chainlink UI. The subscription is funded in **native ETH** —
+/// VRF v2.5 bills a native-funded subscription in the chain's own token, so the
+/// ETH that pays for gas also pays for the randomness and no LINK is involved.
 ///
 /// Required env:
 ///   MNEMONIC              deployer seed phrase (BIP-44, m/44'/60'/0'/0/index)
@@ -27,7 +25,8 @@ import {Leaderboard} from "../src/Leaderboard.sol";
 ///
 /// Optional env:
 ///   MNEMONIC_INDEX        account index to derive (default 0)
-///   VRF_SUBSCRIPTION_ID   reuse an existing subscription instead of creating one
+///   VRF_SUBSCRIPTION_ID   reuse an existing subscription that already lists the
+///                         new RaceEscrow as a consumer, instead of creating one
 ///   VRF_FUND_WEI          native funding for a newly created subscription
 ///                         (default 0.01 ether; 0 skips funding)
 ///   MINT_FEE_DRIFT        car mint fee in whole DRIFT (default 1)
@@ -72,7 +71,11 @@ contract Deploy is DeployerKey {
         console2.log("CarNFT      ", address(d.carNft));
         console2.log("RaceEscrow  ", address(d.escrow));
         console2.log("Leaderboard ", address(d.leaderboard));
-        console2.log("VRF sub id  ", d.subscriptionId);
+        console2.log("");
+        console2.log("The VRF subscription ID printed during a run is the");
+        console2.log("simulated one -- it derives from a blockhash. Read the");
+        console2.log("real value from the deployed contract:");
+        console2.log("  cast call <RaceEscrow> 'subscriptionId()(uint256)'");
 
         _writeDeployment(d);
     }
@@ -114,35 +117,27 @@ contract Deploy is DeployerKey {
     // ─── Deploy ─────────────────────────────────────────────────────────────
 
     function _deploy(Config memory cfg) private returns (Deployment memory d) {
-        IVRFSubscriptionV2Plus coordinator = IVRFSubscriptionV2Plus(cfg.vrfCoordinator);
-
-        // The subscription ID is a constructor argument, so it has to exist
-        // before RaceEscrow is deployed; the consumer is added afterwards.
-        d.subscriptionId = cfg.subscriptionId == 0
-            ? coordinator.createSubscription()
-            : cfg.subscriptionId;
-
         d.drift = new DriftToken(cfg.initialSupply, cfg.deployer, cfg.faucetEnabled);
         d.carNft = new CarNFT(address(d.drift), cfg.mintFee, cfg.baseURI, cfg.deployer);
+        // Passing 0 tells RaceEscrow to create and register its own subscription.
         d.escrow = new RaceEscrow(
             cfg.vrfCoordinator,
-            d.subscriptionId,
+            cfg.subscriptionId,
             cfg.keyHash,
             address(d.drift),
             address(d.carNft),
             cfg.deployer
         );
-        d.leaderboard = new Leaderboard(cfg.deployer);
+        d.subscriptionId = d.escrow.subscriptionId();
 
+        d.leaderboard = new Leaderboard(cfg.deployer);
         d.leaderboard.setRaceEscrow(address(d.escrow));
         d.leaderboard.setRecorder(cfg.recorder);
 
-        coordinator.addConsumer(d.subscriptionId, address(d.escrow));
-
         // Funding last: if it fails, everything else is already on-chain and the
-        // subscription can be topped up separately.
-        if (cfg.subscriptionId == 0 && cfg.vrfFundWei > 0) {
-            coordinator.fundSubscriptionWithNative{value: cfg.vrfFundWei}(d.subscriptionId);
+        // subscription can be topped up with `fundVrfSubscription`.
+        if (cfg.vrfFundWei > 0) {
+            d.escrow.fundVrfSubscription{value: cfg.vrfFundWei}();
         }
     }
 
@@ -153,8 +148,7 @@ contract Deploy is DeployerKey {
             '  "driftToken": "', vm.toString(address(d.drift)), '",\n',
             '  "carNft": "', vm.toString(address(d.carNft)), '",\n',
             '  "raceEscrow": "', vm.toString(address(d.escrow)), '",\n',
-            '  "leaderboard": "', vm.toString(address(d.leaderboard)), '",\n',
-            '  "vrfSubscriptionId": "', vm.toString(d.subscriptionId), '"\n',
+            '  "leaderboard": "', vm.toString(address(d.leaderboard)), '"\n',
             "}\n"
         );
         vm.writeFile(string.concat("deployments/", vm.toString(block.chainid), ".json"), json);

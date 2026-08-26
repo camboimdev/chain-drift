@@ -42,8 +42,16 @@ contract RaceEscrow is VRFConsumerBaseV2Plus, ReentrancyGuard {
     uint256 public constant BPS_DENOMINATOR = 10_000;
     uint8 public constant MAX_PARTICIPANTS = 4;
 
-    /// @notice After this long without resolving, entries can be refunded.
+    /// @notice After this long without filling, entries can be refunded.
     uint256 public constant REFUND_TIMEOUT = 1 hours;
+
+    /// @notice How long to wait on the VRF callback before a race may be cancelled.
+    /// @dev A fulfilment normally lands within a minute. Waiting an hour before
+    ///      allowing a refund keeps a slow coordinator from being mistaken for a
+    ///      dead one, while still guaranteeing the entry fees are recoverable —
+    ///      a subscription that runs out of balance leaves the request pending
+    ///      indefinitely, and without this the stake would be locked forever.
+    uint256 public constant VRF_CALLBACK_TIMEOUT = 1 hours;
 
     uint16 private constant PAYOUT_BPS_1ST = 5000;
     uint16 private constant PAYOUT_BPS_2ND = 3000;
@@ -71,6 +79,8 @@ contract RaceEscrow is VRFConsumerBaseV2Plus, ReentrancyGuard {
         uint8 maxParticipants;
         RaceStatus status;
         uint64 createdAt;
+        /// @dev Packs into the same slot; uint48 covers timestamps past year 8.9M.
+        uint48 resolveRequestedAt;
         uint256 vrfRequestId;
     }
 
@@ -98,7 +108,11 @@ contract RaceEscrow is VRFConsumerBaseV2Plus, ReentrancyGuard {
 
     uint256 public subscriptionId;
     bytes32 public keyHash;
-    uint32 public callbackGasLimit = 500_000;
+    /// @dev A four-player fulfilment measures at ~195k gas. The limit matters
+    ///      beyond safety: the DON reserves the full amount at the gas lane's max
+    ///      price when deciding whether a subscription can afford a request, so
+    ///      an inflated limit raises the balance needed to get fulfilled at all.
+    uint32 public callbackGasLimit = 300_000;
     uint16 public requestConfirmations = 3;
 
     /// @notice Pay for randomness in the chain's native token instead of LINK.
@@ -135,6 +149,7 @@ contract RaceEscrow is VRFConsumerBaseV2Plus, ReentrancyGuard {
     event RaceCancelled(uint256 indexed raceId);
     event Claimed(address indexed account, uint256 amount);
     event FeeRecipientSet(address indexed newRecipient);
+    event VrfSubscriptionSet(uint256 indexed subscriptionId, bool selfProvisioned);
     event VrfConfigSet(
         uint256 subscriptionId,
         bytes32 keyHash,
@@ -146,7 +161,9 @@ contract RaceEscrow is VRFConsumerBaseV2Plus, ReentrancyGuard {
     // ─── Init ───────────────────────────────────────────────────────────────
 
     /// @param vrfCoordinator  Chainlink VRF v2.5 coordinator for this chain.
-    /// @param subscriptionId_ Funded VRF subscription that lists this contract as a consumer.
+    /// @param subscriptionId_ Existing VRF subscription that already lists this
+    ///                        contract as a consumer, or **0** to have the
+    ///                        contract create and own one for itself.
     /// @param keyHash_        Gas lane key hash.
     /// @param paymentToken_   DRIFT token address.
     /// @param carNft_         CarNFT collection address.
@@ -165,8 +182,45 @@ contract RaceEscrow is VRFConsumerBaseV2Plus, ReentrancyGuard {
         paymentToken = IERC20(paymentToken_);
         carNft = IERC721(carNft_);
         feeRecipient = feeRecipient_;
-        subscriptionId = subscriptionId_;
         keyHash = keyHash_;
+
+        if (subscriptionId_ == 0) {
+            // Self-provision. A subscription ID is derived from
+            // `blockhash(block.number - 1)`, so it cannot be created by one
+            // transaction and consumed by another that was built in advance —
+            // a deploy script would record `addConsumer` against an ID that no
+            // longer matches by the time it lands. Doing both inside this
+            // constructor keeps it to a single atomic transaction.
+            subscriptionId = s_vrfCoordinator.createSubscription();
+            s_vrfCoordinator.addConsumer(subscriptionId, address(this));
+        } else {
+            subscriptionId = subscriptionId_;
+        }
+
+        emit VrfSubscriptionSet(subscriptionId, subscriptionId_ == 0);
+    }
+
+    // ─── VRF subscription ───────────────────────────────────────────────────
+
+    /// @notice Top up the VRF subscription with native ETH.
+    /// @dev Anyone may fund it — a race that cannot pay for its randomness is
+    ///      everyone's problem, not just the owner's.
+    function fundVrfSubscription() external payable {
+        s_vrfCoordinator.fundSubscriptionWithNative{value: msg.value}(subscriptionId);
+    }
+
+    /// @notice Native balance left in the VRF subscription.
+    /// @dev Roughly `balance / costPerRace` races remain; the UI surfaces this
+    ///      so a stalled lobby is diagnosable without reading the coordinator.
+    function vrfNativeBalance() external view returns (uint96 nativeBalance) {
+        (, nativeBalance,,,) = s_vrfCoordinator.getSubscription(subscriptionId);
+    }
+
+    /// @notice Close the self-provisioned subscription and send its balance to `to`.
+    /// @dev Only meaningful when this contract owns the subscription. Reverts
+    ///      while any request is still pending.
+    function cancelVrfSubscription(address to) external onlyOwner {
+        s_vrfCoordinator.cancelSubscription(subscriptionId, to);
     }
 
     // ─── Race lifecycle ─────────────────────────────────────────────────────
@@ -183,6 +237,7 @@ contract RaceEscrow is VRFConsumerBaseV2Plus, ReentrancyGuard {
             maxParticipants: maxPlayers,
             status: RaceStatus.Open,
             createdAt: uint64(block.timestamp),
+            resolveRequestedAt: 0,
             vrfRequestId: 0
         });
 
@@ -257,6 +312,7 @@ contract RaceEscrow is VRFConsumerBaseV2Plus, ReentrancyGuard {
         );
 
         race.vrfRequestId = requestId;
+        race.resolveRequestedAt = uint48(block.timestamp);
         raceOfRequest[requestId] = raceId;
 
         emit ResolveRequested(raceId, requestId);
@@ -340,17 +396,34 @@ contract RaceEscrow is VRFConsumerBaseV2Plus, ReentrancyGuard {
         return 0;
     }
 
-    /// @notice Cancel a race that never resolved and credit every entrant a refund.
-    ///         Callable by anyone once `REFUND_TIMEOUT` has elapsed.
+    /// @notice Cancel a stalled race and credit every entrant a refund.
+    ///         Callable by anyone once the relevant timeout has elapsed.
+    ///
+    /// @dev Covers two different kinds of stall:
+    ///      - Open or Locked, measured from creation: the room never filled, or
+    ///        nobody ever asked for it to be resolved.
+    ///      - Resolving, measured from the resolve request: the VRF callback
+    ///        never arrived. A subscription without enough balance leaves the
+    ///        request pending forever, and the stake has to be recoverable.
+    ///
+    ///      A callback that arrives after a cancellation is harmless:
+    ///      `fulfillRandomWords` returns early for any race that is no longer
+    ///      Resolving, so the refund cannot be paid twice.
+    ///
     /// @dev The Klever version refunded only the caller and then marked the race
     ///      Cancelled, which locked everyone else out of their own refund.
     function cancelRace(uint256 raceId) external {
         Race storage race = _races[raceId];
-        if (race.status != RaceStatus.Open && race.status != RaceStatus.Locked) {
+
+        uint256 availableAt;
+        if (race.status == RaceStatus.Open || race.status == RaceStatus.Locked) {
+            availableAt = race.createdAt + REFUND_TIMEOUT;
+        } else if (race.status == RaceStatus.Resolving) {
+            availableAt = race.resolveRequestedAt + VRF_CALLBACK_TIMEOUT;
+        } else {
             revert RaceNotRefundable(raceId, race.status);
         }
 
-        uint256 availableAt = race.createdAt + REFUND_TIMEOUT;
         if (block.timestamp < availableAt) revert RefundTimeoutNotReached(availableAt);
 
         race.status = RaceStatus.Cancelled;

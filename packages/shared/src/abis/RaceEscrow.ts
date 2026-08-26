@@ -91,6 +91,19 @@ export const raceEscrowAbi = [
   },
   {
     "type": "function",
+    "name": "VRF_CALLBACK_TIMEOUT",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "acceptOwnership",
     "inputs": [],
     "outputs": [],
@@ -117,6 +130,19 @@ export const raceEscrowAbi = [
         "name": "raceId",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "cancelVrfSubscription",
+    "inputs": [
+      {
+        "name": "to",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -243,6 +269,13 @@ export const raceEscrowAbi = [
   },
   {
     "type": "function",
+    "name": "fundVrfSubscription",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
     "name": "getOpenRaces",
     "inputs": [
       {
@@ -350,6 +383,11 @@ export const raceEscrowAbi = [
             "name": "createdAt",
             "type": "uint64",
             "internalType": "uint64"
+          },
+          {
+            "name": "resolveRequestedAt",
+            "type": "uint48",
+            "internalType": "uint48"
           },
           {
             "name": "vrfRequestId",
@@ -656,6 +694,19 @@ export const raceEscrowAbi = [
     "stateMutability": "nonpayable"
   },
   {
+    "type": "function",
+    "name": "vrfNativeBalance",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "nativeBalance",
+        "type": "uint96",
+        "internalType": "uint96"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
     "type": "event",
     "name": "Claimed",
     "inputs": [
@@ -894,6 +945,25 @@ export const raceEscrowAbi = [
       },
       {
         "name": "nativePayment",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "VrfSubscriptionSet",
+    "inputs": [
+      {
+        "name": "subscriptionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "selfProvisioned",
         "type": "bool",
         "indexed": false,
         "internalType": "bool"

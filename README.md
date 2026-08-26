@@ -84,8 +84,20 @@ pnpm contracts:setup
 No LINK required. `RaceEscrow` requests randomness with `nativePayment` on, so
 the VRF subscription is funded in ETH like everything else.
 
-Budget roughly **0.05 ETH**: ~6.6M gas for the deploy (about 0.00005 ETH at Base
-Sepolia's usual 0.006 gwei) plus whatever you put into the VRF subscription.
+Budget **at least 0.05 ETH**, almost all of it for the VRF subscription.
+
+The deploy itself is cheap — measured at 0.0000434 ETH on Base Sepolia. The
+subscription is what costs: the DON decides whether to fulfil a request by
+reserving `callbackGasLimit` at the **gas lane's max price**, and Base Sepolia's
+only lane is the 30 gwei one, three orders of magnitude above the ~0.006 gwei
+actually charged. At the current 300k callback limit that is roughly
+
+    (300_000 + 162_500) x 30 gwei x 1.6 premium  ~=  0.022 ETH
+
+reserved per request. Fund the subscription below that and the request is
+accepted on-chain, sits pending forever, and never gets fulfilled. Actual
+billing is on real gas used, so a race costs about **0.0000035 ETH** — the
+balance is a reserve, not a spend.
 
 ### 3. Deploy
 

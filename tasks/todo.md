@@ -31,13 +31,56 @@ New repository. The Klever implementation stays in `chain-drift` and is frozen.
 - [x] Open-race discovery cost three RPC calls per candidate ID. Now one
       `getOpenRaces` call on-chain.
 
+## Base Sepolia playtest (2026-08-25)
+
+Deployed and driven end to end from one wallet with `script/Playtest.s.sol`.
+
+| Contract | Address |
+| --- | --- |
+| DriftToken | `0x7A0F50a1aB69E633Cc6C9FE46A8a261Dbfa3bb4A` |
+| CarNFT | `0xcfB59EC458e9f0B93a18D9c9D34Fc62DC5777F5e` |
+| RaceEscrow | `0x3C0d382F26835502a8213164045Be0d882Cf7267` |
+| Leaderboard | `0xa49754A5CFC78213b7068Dbba73BEa8d6A2bfD48` |
+
+Worked: deploy (0.0000434 ETH), self-provisioned VRF subscription (owner and
+consumer both the escrow), mint, createRace, enterRace, lock on a full grid,
+requestResolve.
+
+Stopped at the VRF callback. The DON reserves `callbackGasLimit` at the **gas
+lane's max price** — 30 gwei on Base Sepolia's only lane — when deciding whether
+a subscription can afford a request. ~0.022 ETH reserved per request against a
+0.00003 ETH balance, so the request was accepted on-chain and then sat pending.
+Nothing was misconfigured; `pendingRequestExists` was true and the subscription
+was billed nothing.
+
+Redeploy once the wallet holds ~0.05 ETH; the deployed contracts predate the two
+fixes below.
+
+## Fixed by the playtest
+
+- [x] A race whose VRF callback never arrived was stuck in `Resolving` forever
+      and the entry fees were unrecoverable. `cancelRace` now covers `Resolving`
+      after `VRF_CALLBACK_TIMEOUT`, measured from the resolve request rather
+      than from race creation. A late callback is a no-op, so no double pay.
+- [x] `callbackGasLimit` dropped 500k → 300k against a measured ~195k
+      four-player fulfilment. The limit is not just a safety bound — it sets the
+      balance the DON demands before it will fulfil at all.
+- [x] `Deploy.s.sol` recorded the **simulated** VRF subscription ID into
+      `deployments/<chainId>.json`. A subscription ID derives from
+      `blockhash(block.number - 1)`, so the recorded value never matches the one
+      created on-chain. The field is gone; the contract is the source of truth.
+- [x] The same derivation broke the deploy outright: `createSubscription()` in
+      one recorded transaction and `addConsumer()` in the next reverted with
+      `InvalidSubscription()`. `RaceEscrow` now provisions its own subscription
+      in its constructor, keeping it to one atomic transaction.
+
 ## Next
 
-- [ ] Create and fund a Chainlink VRF subscription on Base Sepolia
-- [ ] Deploy to Base Sepolia, add `RaceEscrow` as a VRF consumer
-- [ ] Fill `packages/frontend/.env.local` with the deployed addresses
-- [ ] End-to-end run: faucet → mint → create race → 4 entries → resolve → claim
-- [ ] Tune `callbackGasLimit` against a real 4-player resolution
+- [ ] Top the deployer up to ~0.05 ETH and redeploy with the fixes
+- [ ] Fund the VRF subscription above the 30 gwei lane reserve (~0.03 ETH)
+- [ ] Fill `packages/frontend/.env.local` with the redeployed addresses
+- [ ] Finish the end-to-end run through resolve → claim → leaderboard
+- [ ] Verify contracts on Basescan (needs `BASESCAN_API_KEY`)
 - [ ] Wire a DRIFT faucet button into `GarageEmptyState` for new players
 - [ ] Surface `pendingWithdrawals` and a claim button in `WalletHeader`
 - [ ] Handle the `isWrongNetwork` state in the UI (`switchToGameChain` is wired

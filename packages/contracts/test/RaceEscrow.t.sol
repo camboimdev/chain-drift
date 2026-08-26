@@ -261,6 +261,60 @@ contract RaceEscrowTest is BaseTest {
         escrow.cancelRace(raceId);
     }
 
+    function test_cancelRace_recoversARaceWhoseVrfCallbackNeverArrives() public {
+        uint256 raceId = _fullRace();
+        escrow.requestResolve(raceId);
+        assertEq(uint8(escrow.getRaceStatus(raceId)), uint8(RaceEscrow.RaceStatus.Resolving));
+
+        // Found on Base Sepolia: a subscription without enough balance leaves the
+        // request pending forever, and the stake has to stay recoverable.
+        vm.warp(block.timestamp + 1 hours);
+        escrow.cancelRace(raceId);
+
+        assertEq(uint8(escrow.getRaceStatus(raceId)), uint8(RaceEscrow.RaceStatus.Cancelled));
+        assertEq(escrow.pendingWithdrawals(alice), ENTRY_FEE);
+        assertEq(escrow.pendingWithdrawals(dave), ENTRY_FEE);
+    }
+
+    function test_cancelRace_rejectsResolvingBeforeTheCallbackTimeout() public {
+        uint256 raceId = _fullRace();
+        escrow.requestResolve(raceId);
+
+        // The clock runs from the resolve request, not from race creation — a
+        // race that sat open for an hour still gets a full VRF grace period.
+        vm.warp(block.timestamp + 59 minutes);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                RaceEscrow.RefundTimeoutNotReached.selector, block.timestamp + 1 minutes
+            )
+        );
+        escrow.cancelRace(raceId);
+    }
+
+    function test_lateVrfCallbackOnACancelledRacePaysNothing() public {
+        uint256 raceId = _fullRace();
+        uint256 requestId = escrow.requestResolve(raceId);
+
+        vm.warp(block.timestamp + 1 hours);
+        escrow.cancelRace(raceId);
+
+        // The coordinator can still answer afterwards; it must not pay out on
+        // top of the refunds that were already credited.
+        vrf.fulfillRandomWords(requestId, address(escrow));
+
+        assertEq(uint8(escrow.getRaceStatus(raceId)), uint8(RaceEscrow.RaceStatus.Cancelled));
+        assertEq(escrow.pendingWithdrawals(alice), ENTRY_FEE);
+        assertEq(escrow.pendingWithdrawals(feeRecipient), 0, "fee taken on a cancelled race");
+    }
+
+    function test_callbackGasLimit_coversMeasuredFulfilment() public view {
+        // A four-player callback measures at ~195k gas on this code.
+        assertGe(escrow.callbackGasLimit(), 250_000);
+        // An inflated limit raises the subscription balance the DON demands
+        // before it will fulfil at all, so it is capped deliberately.
+        assertLe(escrow.callbackGasLimit(), 300_000);
+    }
+
     // ─── Views ──────────────────────────────────────────────────────────────
 
     function test_getOpenRaces_returnsNewestFirstAndSkipsLocked() public {
@@ -313,6 +367,72 @@ contract RaceEscrowTest is BaseTest {
         vm.prank(mallory);
         vm.expectRevert();
         escrow.setVrfConfig(1, KEY_HASH, 500_000, 3, true);
+    }
+
+    // ─── VRF subscription provisioning ──────────────────────────────────────
+
+    function test_constructor_selfProvisionsSubscriptionWhenIdIsZero() public {
+        // Passing 0 makes the contract create and register its own subscription,
+        // which is what lets a deploy stay a single atomic transaction.
+        RaceEscrow fresh = new RaceEscrow(
+            address(vrf), 0, KEY_HASH, address(drift), address(carNft), feeRecipient
+        );
+
+        uint256 newSubId = fresh.subscriptionId();
+        assertTrue(newSubId != 0, "no subscription created");
+        assertTrue(newSubId != subId, "reused the fixture subscription");
+
+        (,,, address subOwner, address[] memory consumers) = vrf.getSubscription(newSubId);
+        assertEq(subOwner, address(fresh), "contract does not own its subscription");
+        assertEq(consumers.length, 1);
+        assertEq(consumers[0], address(fresh), "not registered as a consumer");
+    }
+
+    function test_constructor_keepsGivenSubscriptionId() public {
+        RaceEscrow fresh = new RaceEscrow(
+            address(vrf), subId, KEY_HASH, address(drift), address(carNft), feeRecipient
+        );
+        assertEq(fresh.subscriptionId(), subId);
+    }
+
+    function test_fundVrfSubscription_isOpenToAnyone() public {
+        RaceEscrow fresh = new RaceEscrow(
+            address(vrf), 0, KEY_HASH, address(drift), address(carNft), feeRecipient
+        );
+
+        address stranger = makeAddr("stranger");
+        vm.deal(stranger, 1 ether);
+
+        assertEq(fresh.vrfNativeBalance(), 0);
+
+        vm.prank(stranger);
+        fresh.fundVrfSubscription{value: 0.25 ether}();
+
+        assertEq(fresh.vrfNativeBalance(), 0.25 ether);
+    }
+
+    function test_selfProvisionedSubscription_resolvesARace() public {
+        RaceEscrow fresh = new RaceEscrow(
+            address(vrf), 0, KEY_HASH, address(drift), address(carNft), feeRecipient
+        );
+        vm.deal(address(this), 1 ether);
+        fresh.fundVrfSubscription{value: 1 ether}();
+
+        uint256 raceId = fresh.createRace(ENTRY_FEE, 2);
+        vm.startPrank(alice);
+        drift.approve(address(fresh), type(uint256).max);
+        fresh.enterRace(raceId, aliceCar);
+        vm.stopPrank();
+        vm.startPrank(bob);
+        drift.approve(address(fresh), type(uint256).max);
+        fresh.enterRace(raceId, bobCar);
+        vm.stopPrank();
+
+        uint256 requestId = fresh.requestResolve(raceId);
+        vrf.fulfillRandomWords(requestId, address(fresh));
+
+        assertEq(uint8(fresh.getRaceStatus(raceId)), uint8(RaceEscrow.RaceStatus.Paid));
+        assertLt(fresh.vrfNativeBalance(), 1 ether, "randomness was not billed to the subscription");
     }
 
     // ─── Helpers ────────────────────────────────────────────────────────────
