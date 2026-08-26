@@ -1,0 +1,16 @@
+{
+  "name": "@chain-drift/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "setup": "forge install --no-git foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts@v5.1.0 smartcontractkit/chainlink-brownie-contracts@1.3.0",
+    "build": "forge build && node scripts/export-abis.mjs",
+    "test": "forge test",
+    "test:gas": "forge test --gas-report",
+    "fmt": "forge fmt",
+    "lint": "forge fmt --check",
+    "deploy:base-sepolia": "forge script script/Deploy.s.sol:Deploy --rpc-url base_sepolia --broadcast --verify -vvv",
+    "deploy:base": "forge script script/Deploy.s.sol:Deploy --rpc-url base --broadcast --verify -vvv"
+  }
+}
