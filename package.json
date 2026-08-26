@@ -11,9 +11,11 @@
     "contracts:setup": "pnpm --filter @chain-drift/contracts setup",
     "contracts:build": "pnpm --filter @chain-drift/contracts build",
     "contracts:test": "pnpm --filter @chain-drift/contracts test",
-    "contracts:deploy": "pnpm --filter @chain-drift/contracts deploy:base-sepolia"
+    "contracts:deploy": "pnpm --filter @chain-drift/contracts deploy:base-sepolia",
+    "faucet": "node scripts/faucet.mjs"
   },
   "devDependencies": {
-    "turbo": "^2.5.0"
+    "turbo": "^2.5.0",
+    "viem": "^2.21.0"
   }
 }
