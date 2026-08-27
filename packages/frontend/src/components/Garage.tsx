@@ -1,32 +1,22 @@
-import {
-  ContactShadows,
-  Environment,
-  MeshReflectorMaterial,
-  OrbitControls,
-  Text,
-  Float,
-} from "@react-three/drei";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { Group, Vector3 } from "three";
-import type { OrbitControls as OrbitControlsType } from "three/examples/jsm/controls/OrbitControls.js";
+import { OrbitControls, Text } from "@react-three/drei";
+import { Canvas } from "@react-three/fiber";
+import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
+import { BlendFunction } from "postprocessing";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CarNFT } from "@chain-drift/shared";
-import { Car3D } from "./Car3D";
 import { CarHUD } from "./CarHUD";
-import { WalletHUD } from "./WalletHeader";
 import { GarageEmptyState } from "./GarageEmptyState";
-
-const DS = {
-  bg: "#000000",
-  surface: "#111111",
-  border: "#2A2A2A",
-  divider: "#1A1A1A",
-  textPrimary: "#FFFFFF",
-  textSecondary: "#E5E5E5",
-  textMeta: "#BFBFBF",
-  textDisabled: "#3A3A3A",
-  font: "'JetBrains Mono', monospace",
-};
+import { WalletHUD } from "./WalletHeader";
+import { CarBay } from "./garage/CarBay";
+import { GarageBay } from "./garage/GarageBay";
+import { GarageCamera } from "./garage/GarageCamera";
+import { CornerFrame, GarageHeader, GhostButton, ModeCluster } from "./garage/GarageFrame";
+import { FleetIndex } from "./garage/FleetIndex";
+import { SpecSheet } from "./garage/SpecSheet";
+import { DS, FONT_REGULAR, archetypeOf } from "./garage/design";
+import { computeLayout, entryPosition, isOnStage, ringOffset } from "./garage/layout";
+import type { GarageMode } from "./garage/layout";
+import { preloadCarModels } from "../services/carModelPreloader";
 
 interface GarageProps {
   cars: CarNFT[];
@@ -38,373 +28,46 @@ interface GarageProps {
   onOpenLeaderboard?: () => void;
 }
 
-// ─── Carousel slot system ────────────────────────────────────────────────────
+/** How long the carousel ignores a second wheel notch, in ms. */
+const WHEEL_COOLDOWN = 220;
 
-type SlotRole = "featured" | "left" | "right" | "exit-left" | "exit-right";
-
-interface VisibleSlot {
-  car: CarNFT;
-  role: SlotRole;
-  entryPos?: [number, number, number];
-}
-
-const SLOT_TARGETS: Record<
-  SlotRole,
-  {
-    pos: [number, number, number];
-    rotY: number;
-    scale: number;
-    dimmed: boolean;
-    platformR: number;
-    platformRI: number;
-    platformSeg: number;
-  }
-> = {
-  featured:    { pos: [0, 0, 0],        rotY: -Math.PI / 6,  scale: 1.0, dimmed: false, platformR: 5,   platformRI: 5.2, platformSeg: 64 },
-  left:        { pos: [-9.5, 0, -2.5],  rotY: Math.PI / 7,   scale: 0.8, dimmed: true,  platformR: 3.5, platformRI: 3.7, platformSeg: 48 },
-  right:       { pos: [9.5, 0, -2.5],   rotY: -Math.PI / 7,  scale: 0.8, dimmed: true,  platformR: 3.5, platformRI: 3.7, platformSeg: 48 },
-  "exit-left":  { pos: [-22, 0, -5],    rotY: Math.PI / 7,   scale: 0.3, dimmed: true,  platformR: 3.5, platformRI: 3.7, platformSeg: 48 },
-  "exit-right": { pos: [22, 0, -5],     rotY: -Math.PI / 7,  scale: 0.3, dimmed: true,  platformR: 3.5, platformRI: 3.7, platformSeg: 48 },
-};
-
-function computeActiveSlots(cars: CarNFT[], idx: number): VisibleSlot[] {
-  const total = cars.length;
-  if (total === 0) return [];
-  const slots: VisibleSlot[] = [{ car: cars[idx], role: "featured" }];
-  if (total >= 2) slots.push({ car: cars[(idx - 1 + total) % total], role: "left" });
-  if (total >= 3) slots.push({ car: cars[(idx + 1) % total], role: "right" });
-  return slots;
-}
-
-// ─── AnimatedGroup ───────────────────────────────────────────────────────────
-// Keeps its own position/scale/rotY in refs and lerps toward targets every frame.
-// key={car.id} in parent ensures the same instance is reused when a car changes
-// slots — so it smoothly lerps from its current position to the new target.
-
-function AnimatedGroup({
-  targetPos,
-  targetRotY,
-  targetScale,
-  entryPos,
-  children,
-}: {
-  targetPos: [number, number, number];
-  targetRotY: number;
-  targetScale: number;
-  entryPos?: [number, number, number];
-  children: React.ReactNode;
-}) {
-  const groupRef = useRef<Group>(null);
-  // Initialise at entryPos (off-screen) when the car is newly entering the scene.
-  const animPos = useRef(new Vector3(...(entryPos ?? targetPos)));
-  const animScale = useRef(entryPos ? 0.3 : targetScale);
-
-  useFrame((_, delta) => {
-    if (!groupRef.current) return;
-    const tPos   = Math.min(1, 6 * delta);
-    const tScale = Math.min(1, 8 * delta);
-
-    animPos.current.lerp(new Vector3(...targetPos), tPos);
-    animScale.current += (targetScale - animScale.current) * tScale;
-
-    groupRef.current.position.copy(animPos.current);
-    groupRef.current.scale.setScalar(animScale.current);
-
-    // Smooth rotation — wrap delta to [-π, π] to avoid spinning the wrong way
-    let dr = targetRotY - groupRef.current.rotation.y;
-    if (dr > Math.PI)  dr -= 2 * Math.PI;
-    if (dr < -Math.PI) dr += 2 * Math.PI;
-    groupRef.current.rotation.y += dr * tPos;
-  });
-
-  return <group ref={groupRef}>{children}</group>;
-}
-
-// ─── Environment ─────────────────────────────────────────────────────────────
-
-function ShowroomEnvironment() {
+function BootText() {
   return (
-    <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]} receiveShadow>
-        <planeGeometry args={[100, 100]} />
-        <MeshReflectorMaterial
-          blur={[300, 100]}
-          resolution={1024}
-          mixBlur={1}
-          mixStrength={60}
-          roughness={0.4}
-          depthScale={1.2}
-          minDepthThreshold={0.4}
-          maxDepthThreshold={1.4}
-          color="#1a1a1a"
-          metalness={0.6}
-          mirror={0}
-        />
-      </mesh>
-
-      {[-20, 20].map((x) => (
-        <group key={x}>
-          {[-20, 0, 20].map((z) => (
-            <mesh key={z} position={[x, 10, z]} receiveShadow castShadow>
-              <boxGeometry args={[2, 20, 2]} />
-              <meshStandardMaterial color="#333" roughness={0.2} metalness={0.8} />
-            </mesh>
-          ))}
-        </group>
-      ))}
-
-      <mesh position={[0, 19, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[100, 100]} />
-        <meshBasicMaterial color="#111" />
-      </mesh>
-
-      <mesh position={[0, 10, -30]}>
-        <planeGeometry args={[100, 20]} />
-        <meshStandardMaterial color="#222" roughness={0.8} />
-      </mesh>
-
-      <mesh position={[0, 5, -29.5]}>
-        <boxGeometry args={[100, 0.5, 0.5]} />
-        <meshBasicMaterial color="#ffffff" toneMapped={false} />
-      </mesh>
-    </group>
-  );
-}
-
-// ─── Camera controllers ───────────────────────────────────────────────────────
-
-function StudioCameraSetup() {
-  const { camera } = useThree();
-  const initialized = useRef(false);
-  useEffect(() => {
-    if (!initialized.current) {
-      camera.position.set(4, 3, 7);
-      camera.lookAt(0, 0.5, 0);
-      initialized.current = true;
-    }
-  }, [camera]);
-  return null;
-}
-
-const GALLERY_POS  = new Vector3(0, 4.5, 15);
-const GALLERY_LOOK = new Vector3(0, 0.8, 0);
-
-function GalleryCameraController() {
-  useFrame((state, delta) => {
-    const d = 4 * delta;
-    state.camera.position.lerp(GALLERY_POS, d);
-    const controls = state.controls as unknown as OrbitControlsType;
-    if (controls) {
-      controls.target.lerp(GALLERY_LOOK, d);
-      controls.update();
-    }
-  });
-  return null;
-}
-
-// ─── GarageScene ─────────────────────────────────────────────────────────────
-
-function LoadingText() {
-  return (
-    <Text position={[0, 2, 0]} fontSize={1} color="#333" anchorX="center" anchorY="middle">
-      Loading Garage...
+    <Text
+      font={FONT_REGULAR}
+      position={[0, 2, 0]}
+      fontSize={0.5}
+      letterSpacing={0.3}
+      color="#2A2A2A"
+      anchorX="center"
+      anchorY="middle"
+    >
+      OPENING BAY...
     </Text>
   );
 }
-
-function GarageScene({
-  visibleSlots,
-  featuredCar,
-  onCarSelect,
-  onCarOpen,
-  viewMode,
-}: {
-  visibleSlots: VisibleSlot[];
-  featuredCar: CarNFT | null;
-  onCarSelect: (carId: string) => void;
-  onCarOpen:  (carId: string) => void;
-  viewMode: "Gallery" | "Studio";
-}) {
-  return (
-    <>
-      <Environment preset="city" environmentIntensity={0.5} />
-      <ambientLight intensity={0.4} />
-
-      <spotLight
-        position={[20, 30, 20]}
-        angle={0.3}
-        penumbra={1}
-        intensity={2}
-        castShadow
-        shadow-mapSize={[2048, 2048]}
-        color="#fffaee"
-      />
-      <spotLight
-        position={[-20, 20, -20]}
-        angle={0.5}
-        penumbra={1}
-        intensity={2}
-        color="#d0eaff"
-      />
-      {/* Dedicated featured-car spotlight */}
-      <spotLight
-        position={[0, 15, 3]}
-        angle={0.25}
-        penumbra={0.8}
-        intensity={3.5}
-        castShadow
-        shadow-mapSize={[2048, 2048]}
-        color="#ffffff"
-      />
-
-      <ShowroomEnvironment />
-
-      <ContactShadows
-        opacity={0.6}
-        scale={100}
-        blur={1}
-        far={4}
-        resolution={1024}
-        color="#000000"
-      />
-
-      {/* Studio mode: single car */}
-      {viewMode === "Studio" && featuredCar && (
-        <group rotation={[0, -Math.PI / 6, 0]}>
-          <Car3D
-            tokenId={featuredCar.tokenId}
-            position={[0, 0.1, 0]}
-            isSelected
-            interactive
-          />
-        </group>
-      )}
-
-      {/* Gallery carousel: animated slots */}
-      {viewMode === "Gallery" && visibleSlots.map((slot) => {
-        const t = SLOT_TARGETS[slot.role];
-        const isFeatured = slot.role === "featured";
-        const isExiting  = slot.role === "exit-left" || slot.role === "exit-right";
-
-        return (
-          <AnimatedGroup
-            key={slot.car.id}
-            targetPos={t.pos}
-            targetRotY={t.rotY}
-            targetScale={t.scale}
-            entryPos={slot.entryPos}
-          >
-            {/* Platform disc — not rendered for exiting cars */}
-            {!isExiting && (
-              <mesh position={[0, 0.05, 0]} receiveShadow>
-                <cylinderGeometry args={[t.platformR, t.platformRI, 0.1, t.platformSeg]} />
-                <meshStandardMaterial
-                  color={isFeatured ? "#444444" : "#222222"}
-                  emissive={isFeatured ? "#222222" : "#111111"}
-                  roughness={0.2}
-                  metalness={0.8}
-                />
-              </mesh>
-            )}
-
-            {isFeatured ? (
-              <Float speed={2} rotationIntensity={0.1} floatIntensity={0.5}>
-                <Car3D
-                  tokenId={slot.car.tokenId}
-                  position={[0, 0.5, 0]}
-                  isSelected
-                  interactive
-                  onClick={() => onCarOpen(slot.car.id)}
-                />
-              </Float>
-            ) : (
-              <Car3D
-                tokenId={slot.car.tokenId}
-                position={[0, 0.1, 0]}
-                dimmed
-                interactive
-                onClick={isExiting ? undefined : () => onCarSelect(slot.car.id)}
-              />
-            )}
-          </AnimatedGroup>
-        );
-      })}
-
-      {viewMode === "Gallery" ? <GalleryCameraController /> : <StudioCameraSetup />}
-
-      {/* One controls instance for both modes. React reuses it across the mode
-          switch, and any prop set in only one branch is reset — maxDistance
-          would come back as 0 and pin the camera onto the orbit target, i.e.
-          inside the car. Every prop is therefore spelled out for both modes. */}
-      <OrbitControls
-        makeDefault
-        enablePan={false}
-        enableZoom={viewMode === "Studio"}
-        enableRotate={viewMode === "Studio"}
-        minDistance={viewMode === "Studio" ? 3 : 0}
-        maxDistance={viewMode === "Studio" ? 20 : Infinity}
-        maxPolarAngle={Math.PI / 2.1}
-      />
-    </>
-  );
-}
-
-// ─── UI helpers ───────────────────────────────────────────────────────────────
-
-function RarityLabel({ rarity }: { rarity: string }) {
-  const color =
-    rarity === "Legendary" ? DS.textPrimary  :
-    rarity === "Epic"      ? DS.textSecondary :
-    rarity === "Rare"      ? DS.textMeta      :
-                             DS.textDisabled;
-  return (
-    <span style={{ fontSize: 9, color, letterSpacing: "0.15em", fontFamily: DS.font }}>
-      {rarity.toUpperCase()}
-    </span>
-  );
-}
-
-const NAV_BTN: React.CSSProperties = {
-  width: 48,
-  height: 48,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  background: "rgba(0,0,0,0.55)",
-  border: `1px solid ${DS.border}`,
-  color: DS.textPrimary,
-  fontFamily: DS.font,
-  fontSize: 20,
-  cursor: "pointer",
-  pointerEvents: "auto",
-  userSelect: "none",
-  transition: "background 150ms, border-color 150ms",
-  position: "absolute",
-  top: "50%",
-  transform: "translateY(-50%)",
-};
 
 function GarageLoadingOverlay() {
   return (
     <div
       style={{
-        position: "absolute",
-        inset: 0,
-        display: "flex",
-        alignItems: "center",
+        position:       "absolute",
+        inset:          0,
+        display:        "flex",
+        alignItems:     "center",
         justifyContent: "center",
-        zIndex: 20,
-        pointerEvents: "none",
-        fontFamily: DS.font,
+        zIndex:         20,
+        pointerEvents:  "none",
+        fontFamily:     DS.font,
       }}
     >
       <div
         style={{
-          background: DS.bg,
-          border: `1px solid ${DS.border}`,
-          padding: "18px 32px",
-          fontSize: 9,
-          color: DS.textDisabled,
+          background:    DS.bg,
+          border:        `1px solid ${DS.border}`,
+          padding:       "18px 32px",
+          fontSize:      9,
+          color:         DS.textDisabled,
           letterSpacing: "0.25em",
         }}
       >
@@ -414,8 +77,16 @@ function GarageLoadingOverlay() {
   );
 }
 
-// ─── Garage ──────────────────────────────────────────────────────────────────
-
+/**
+ * The garage.
+ *
+ * Three views of one fleet, and one selection shared between them: GALLERY puts
+ * a car on the scan pad with its neighbours receding either side, FLEET parks
+ * every unit on a numbered bay so the whole collection is on screen at once,
+ * and INSPECT hands the camera to the player. Switching mode re-runs the layout
+ * and the bays drive themselves there — there is no separate transition to keep
+ * in sync with the state.
+ */
 export function Garage({
   cars,
   loading = false,
@@ -425,265 +96,228 @@ export function Garage({
   onOpenLeaderboard,
 }: GarageProps) {
   const [selectedCarId, setSelectedCarId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"Gallery" | "Studio">("Gallery");
+  const [hoveredCarId, setHoveredCarId]   = useState<string | null>(null);
+  const [mode, setMode]                   = useState<GarageMode>("gallery");
 
   // The list is a prop, not a snapshot: a fresh mint has to show up without a
   // remount, and the selection has to survive the car it points at going away.
   const selectedIndex = cars.findIndex((c) => c.id === selectedCarId);
-  const carouselIndex = selectedIndex >= 0 ? selectedIndex : 0;
-  const selectedCar   = cars[carouselIndex] ?? null;
+  const index         = selectedIndex >= 0 ? selectedIndex : 0;
+  const selectedCar   = cars[index] ?? null;
 
   useEffect(() => {
     if (selectedCarId !== null && selectedIndex >= 0) return;
     setSelectedCarId(cars[0]?.id ?? null);
   }, [cars, selectedCarId, selectedIndex]);
 
-  // Visible slots state — manages smooth carousel transitions
-  const [visibleSlots, setVisibleSlots] = useState<VisibleSlot[]>(() =>
-    computeActiveSlots(cars, carouselIndex)
-  );
-  const prevIdxRef = useRef(carouselIndex);
-
+  // Fleet view puts every model on screen at once, so warm them all up front
+  // rather than watching wireframes resolve row by row.
   useEffect(() => {
-    const oldIdx = prevIdxRef.current;
-    const newIdx = carouselIndex;
-    if (oldIdx === newIdx) return;
+    if (cars.length === 0) return;
+    void preloadCarModels(cars.map((car) => car.tokenId));
+  }, [cars]);
 
-    const total = cars.length;
-    let diff = newIdx - oldIdx;
-    if (diff >  total / 2) diff -= total;
-    if (diff < -total / 2) diff += total;
-    const goingRight = diff > 0;
+  const layout = useMemo(() => computeLayout(cars, index, mode), [cars, index, mode]);
 
-    const oldSlots     = computeActiveSlots(cars, oldIdx);
-    const newActiveSlots = computeActiveSlots(cars, newIdx);
-    const oldIds = new Set(oldSlots.map((s) => s.car.id));
-    const newIds = new Set(newActiveSlots.map((s) => s.car.id));
-
-    // Exiting cars (were visible, now gone) — animate off-screen
-    const exiting: VisibleSlot[] = oldSlots
-      .filter((s) => !newIds.has(s.car.id))
-      .map((s) => ({ car: s.car, role: (goingRight ? "exit-left" : "exit-right") as SlotRole }));
-
-    // Active cars — newly entering ones start off-screen
-    const active: VisibleSlot[] = newActiveSlots.map((s) => ({
-      ...s,
-      entryPos: !oldIds.has(s.car.id)
-        ? (goingRight ? [22, 0, -5] : [-22, 0, -5]) as [number, number, number]
-        : undefined,
-    }));
-
-    setVisibleSlots([...active, ...exiting]);
-    prevIdxRef.current = newIdx;
-
-    // Prune exiting cars once animation completes
-    const timer = setTimeout(() => {
-      setVisibleSlots(computeActiveSlots(cars, newIdx));
-    }, 700);
-    return () => clearTimeout(timer);
-  }, [carouselIndex, cars]);
-
-  const navigateBy = useCallback(
+  const navigate = useCallback(
     (step: number) => {
       if (cars.length <= 1) return;
-      const next = (carouselIndex + step + cars.length) % cars.length;
+      const next = (index + step + cars.length) % cars.length;
       setSelectedCarId(cars[next].id);
     },
-    [cars, carouselIndex]
+    [cars, index]
   );
 
-  const navigatePrev = () => navigateBy(-1);
-  const navigateNext = () => navigateBy(1);
+  const handleBayClick = useCallback(
+    (car: CarNFT) => {
+      // Clicking the car already on the mark is the way further in; clicking
+      // any other car brings it to the mark first.
+      if (car.id !== selectedCarId) {
+        setSelectedCarId(car.id);
+        return;
+      }
+      if (mode === "gallery") setMode("inspect");
+      if (mode === "fleet")   setMode("gallery");
+    },
+    [mode, selectedCarId]
+  );
 
-  // Keyboard navigation
   useEffect(() => {
-    if (viewMode !== "Gallery") return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "ArrowLeft")  navigateBy(-1);
-      if (e.key === "ArrowRight") navigateBy(1);
+      // A focused control owns its own keys — Enter on the mode buttons must
+      // press the button, not race the global shortcut for the same key.
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && active !== document.body) return;
+
+      switch (e.key) {
+        case "ArrowLeft":  e.preventDefault(); navigate(-1); break;
+        case "ArrowRight": e.preventDefault(); navigate(1); break;
+        case "g":
+        case "G":          setMode((m) => (m === "fleet" ? "gallery" : "fleet")); break;
+        case "Enter":      setMode("inspect"); break;
+        case "Escape":     setMode("gallery"); break;
+        default: return;
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [viewMode, navigateBy]);
+  }, [navigate]);
+
+  const wheelAt = useRef(0);
+  const handleWheel = (e: React.WheelEvent) => {
+    if (mode !== "gallery") return;
+    const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    if (Math.abs(delta) < 12) return;
+    const now = performance.now();
+    if (now - wheelAt.current < WHEEL_COOLDOWN) return;
+    wheelAt.current = now;
+    navigate(delta > 0 ? 1 : -1);
+  };
+
+  const inspecting = mode === "inspect" && selectedCar !== null;
+  const hasFleet   = !inspecting && cars.length > 0;
+  // Fleet view is the overview — the register and the spec sheet would only
+  // cover the two bays nearest the camera.
+  const showPanels = hasFleet && mode === "gallery";
 
   return (
     <div
+      onWheel={handleWheel}
       style={{
-        width: "100%",
-        height: "100vh",
+        width:      "100%",
+        height:     "100vh",
         background: DS.bg,
-        display: "flex",
-        position: "relative",
-        overflow: "hidden",
+        position:   "relative",
+        overflow:   "hidden",
         fontFamily: DS.font,
       }}
     >
-      <div style={{ flex: 1, position: "relative" }}>
-        <Canvas
-          shadows
-          camera={{ position: [0, 4.5, 15], fov: 55 }}
-          style={{ width: "100%", height: "100%" }}
-        >
-          <Suspense fallback={<LoadingText />}>
-            <GarageScene
-              visibleSlots={visibleSlots}
-              featuredCar={selectedCar}
-              onCarSelect={setSelectedCarId}
-              onCarOpen={(id) => { setSelectedCarId(id); setViewMode("Studio"); }}
-              viewMode={viewMode}
+      <Canvas
+        shadows
+        dpr={[1, 2]}
+        camera={{ position: [0, 3.9, 15.4], fov: 48 }}
+        style={{ width: "100%", height: "100%" }}
+      >
+        <Suspense fallback={<BootText />}>
+          <GarageBay
+            tokenId={selectedCar?.tokenId ?? 0}
+            subtitle={selectedCar ? archetypeOf(selectedCar) : "NO UNITS ON RECORD"}
+            showPlate={mode !== "inspect"}
+          />
+
+          {cars.map((car, i) => {
+            const placement = layout.get(car.id);
+            if (!placement || !isOnStage(placement.tier)) return null;
+            return (
+              <CarBay
+                key={car.id}
+                car={car}
+                placement={placement}
+                entryPos={entryPosition(ringOffset(i, index, cars.length))}
+                mode={mode}
+                active={car.id === selectedCarId}
+                highlighted={car.id === hoveredCarId}
+                onClick={() => handleBayClick(car)}
+              />
+            );
+          })}
+
+          <GarageCamera mode={mode} fleetSize={cars.length} />
+
+          {/* One controls instance across every mode. React reuses it on a mode
+              switch, and a prop set in only one branch is reset — maxDistance
+              would come back as 0 and pin the camera onto the orbit target,
+              i.e. inside the car. Every prop is therefore spelled out. */}
+          <OrbitControls
+            makeDefault
+            enablePan={false}
+            enableZoom={mode === "inspect"}
+            enableRotate={mode === "inspect"}
+            minDistance={mode === "inspect" ? 4 : 0}
+            maxDistance={mode === "inspect" ? 16 : Infinity}
+            maxPolarAngle={Math.PI / 2.05}
+          />
+
+          <EffectComposer>
+            {/* Only the light rig and the pad rings clear the threshold — the
+                floor must not bloom into a grey haze. */}
+            <Bloom intensity={0.55} luminanceThreshold={0.72} luminanceSmoothing={0.9} mipmapBlur />
+            <Vignette offset={0.26} darkness={0.72} blendFunction={BlendFunction.NORMAL} />
+          </EffectComposer>
+        </Suspense>
+      </Canvas>
+
+      <CornerFrame />
+      <WalletHUD fleetCount={cars.length} onMintSuccess={onMintSuccess} />
+
+      {loading && <GarageLoadingOverlay />}
+
+      {!loading && cars.length === 0 && onMintSuccess && (
+        <GarageEmptyState onMintSuccess={onMintSuccess} />
+      )}
+
+      {inspecting && selectedCar && (
+        <CarHUD car={selectedCar} onClose={() => setMode("gallery")} />
+      )}
+
+      {hasFleet && (
+        <>
+          <GarageHeader
+            playerId={playerId}
+            index={index}
+            total={cars.length}
+            onOpenLeaderboard={onOpenLeaderboard}
+          />
+
+          {showPanels && (
+          <div style={{ position: "absolute", bottom: 34, left: 34, pointerEvents: "auto" }}>
+            <FleetIndex
+              cars={cars}
+              selectedId={selectedCarId}
+              hoveredId={hoveredCarId}
+              onSelect={setSelectedCarId}
+              onHover={setHoveredCarId}
+              onOpen={(id) => {
+                setSelectedCarId(id);
+                setMode("inspect");
+              }}
             />
-          </Suspense>
-        </Canvas>
+          </div>
+          )}
 
-        <WalletHUD fleetCount={cars.length} onMintSuccess={onMintSuccess} />
+          <ModeCluster
+            mode={mode}
+            onMode={setMode}
+            index={index}
+            total={cars.length}
+            onStep={navigate}
+          />
 
-        {loading && <GarageLoadingOverlay />}
-
-        {!loading && cars.length === 0 && onMintSuccess && (
-          <GarageEmptyState onMintSuccess={onMintSuccess} />
-        )}
-
-        {viewMode === "Studio" && selectedCar && (
-          <CarHUD car={selectedCar} onClose={() => setViewMode("Gallery")} />
-        )}
-
-        {viewMode === "Gallery" && (
-          <>
-            {/* Header */}
+          {selectedCar && (
             <div
               style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                padding: "28px 32px",
-                pointerEvents: "none",
+                position:      "absolute",
+                bottom:        34,
+                right:         34,
+                pointerEvents: "auto",
+                display:       "flex",
+                flexDirection: "column",
+                alignItems:    "flex-end",
+                gap:           14,
               }}
             >
-              <div style={{ fontSize: 22, fontWeight: 700, color: DS.textPrimary, letterSpacing: "0.12em", marginBottom: 4 }}>
-                MY COLLECTION
-              </div>
-              <div style={{ fontSize: 10, color: DS.textDisabled, letterSpacing: "0.1em" }}>
-                OWNER: {playerId.slice(0, 12)}...
-              </div>
-              {cars.length > 1 && (
-                <div style={{ fontSize: 9, color: DS.textDisabled, letterSpacing: "0.15em", marginTop: 6 }}>
-                  {carouselIndex + 1} / {cars.length}
-                </div>
-              )}
-              {onOpenLeaderboard && (
-                <button
-                  onClick={onOpenLeaderboard}
-                  style={{
-                    marginTop: 14,
-                    padding: "8px 16px",
-                    background: "transparent",
-                    border: `1px solid ${DS.border}`,
-                    color: DS.textMeta,
-                    fontFamily: DS.font,
-                    fontSize: 9,
-                    fontWeight: 700,
-                    letterSpacing: "0.2em",
-                    cursor: "pointer",
-                    pointerEvents: "auto",
-                    transition: "border-color 150ms, color 150ms",
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLButtonElement).style.borderColor = DS.textPrimary;
-                    (e.currentTarget as HTMLButtonElement).style.color = DS.textPrimary;
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLButtonElement).style.borderColor = DS.border;
-                    (e.currentTarget as HTMLButtonElement).style.color = DS.textMeta;
-                  }}
-                >
-                  LEADERBOARD
-                </button>
-              )}
-            </div>
-
-            {/* Vehicle list — bottom left */}
-            <div style={{ position: "absolute", bottom: 32, left: 32, width: 280, pointerEvents: "auto" }}>
-              <div style={{ background: DS.surface, border: `1px solid ${DS.border}`, maxHeight: "55vh", overflowY: "auto" }}>
-                <div style={{ padding: "12px 16px", borderBottom: `1px solid ${DS.divider}`, fontSize: 9, color: DS.textDisabled, letterSpacing: "0.2em" }}>
-                  VEHICLES
-                </div>
-                {cars.map((car) => {
-                  const isActive = car.id === selectedCarId;
-                  return (
-                    <div
-                      key={car.id}
-                      onClick={() => setSelectedCarId(car.id)}
-                      style={{
-                        padding: "12px 16px",
-                        cursor: "pointer",
-                        borderBottom: `1px solid ${DS.divider}`,
-                        background: isActive ? "#1A1A1A" : "transparent",
-                        borderLeft: isActive ? `2px solid ${DS.textPrimary}` : "2px solid transparent",
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        transition: "background 150ms",
-                      }}
-                    >
-                      <span style={{ fontSize: 11, fontWeight: isActive ? 700 : 400, color: isActive ? DS.textPrimary : DS.textMeta, letterSpacing: "0.05em" }}>
-                        {car.name}
-                      </span>
-                      <RarityLabel rarity={car.rarity} />
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Carousel nav arrows */}
-            {cars.length > 1 && (
-              <>
-                <button
-                  onClick={navigatePrev}
-                  style={{ ...NAV_BTN, left: 340 }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.08)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#555"; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(0,0,0,0.55)"; (e.currentTarget as HTMLButtonElement).style.borderColor = DS.border; }}
-                >
-                  ←
-                </button>
-                <button
-                  onClick={navigateNext}
-                  style={{ ...NAV_BTN, right: 120 }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.08)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#555"; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(0,0,0,0.55)"; (e.currentTarget as HTMLButtonElement).style.borderColor = DS.border; }}
-                >
-                  →
-                </button>
-              </>
-            )}
-
-            {/* Race button — bottom right */}
-            {selectedCar && onStartRace && (
-              <div style={{ position: "absolute", bottom: 32, right: 32, pointerEvents: "auto" }}>
-                <button
+              {showPanels && <SpecSheet car={selectedCar} />}
+              {onStartRace && (
+                <GhostButton
+                  primary
+                  label="ENTER RACE"
                   onClick={() => onStartRace(selectedCar.id)}
-                  style={{
-                    padding: "14px 32px",
-                    background: "transparent",
-                    border: `1px solid ${DS.textPrimary}`,
-                    color: DS.textPrimary,
-                    fontFamily: DS.font,
-                    fontSize: 11,
-                    fontWeight: 700,
-                    letterSpacing: "0.2em",
-                    cursor: "pointer",
-                    transition: "background 150ms, color 150ms",
-                  }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = DS.textPrimary; (e.currentTarget as HTMLButtonElement).style.color = DS.bg; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.color = DS.textPrimary; }}
-                >
-                  RACE
-                </button>
-              </div>
-            )}
-          </>
-        )}
-      </div>
+                />
+              )}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

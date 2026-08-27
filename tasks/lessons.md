@@ -120,3 +120,30 @@ five mock cars → racing one reverts.
 
 **Rule:** for anything touching a player-facing flow, walk it end to end and
 check each screen against what the chain actually does at that step.
+
+## A changed contract interface is not live until it is deployed
+
+`90b67c6` dropped the `archetype` argument from `CarNFT.mint()`, regenerated the
+ABIs, and updated the frontend — but Base Sepolia still ran the old bytecode.
+The frontend sent selector `0x1249c58b` (`mint()`) to a contract whose dispatch
+table only knew `0xd85d3d27` (`mint(string)`), so execution fell through to the
+fallback and hit a bare `REVERT 0 0`.
+
+The symptom named nothing useful: `eth_estimateGas` failed with a data-less
+revert, the wallet fell back to the block gas limit (1.2e9 on Base Sepolia), and
+the RPC rejected the send with *"exceeds max transaction gas limit"*. Every
+signal pointed at gas; nothing pointed at the interface.
+
+**Rule:** after any contract interface change, redeploy before testing the
+frontend against it. The ABI in `packages/shared` describes the source, not the
+chain — the two are only in sync because someone deployed.
+
+**Rule:** a data-less revert from a function that should exist means the selector
+missed. Diff the deployed dispatch table against the generated ABI before
+debugging anything else:
+
+    cast code <address> | grep -o '63[0-9a-f]\{8\}14'
+
+**Rule:** `RaceEscrow.carNft` is immutable, so a new `CarNFT` forces a new escrow
+and a new VRF subscription. Reclaim the old subscription's ETH with
+`cancelVrfSubscription(deployer)` before redeploying — it funds the new one.

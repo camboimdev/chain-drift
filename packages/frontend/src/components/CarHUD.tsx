@@ -1,4 +1,5 @@
 import type { CarNFT } from "@chain-drift/shared";
+import { CarStatBlock } from "./garage/StatBars";
 
 const DS = {
   bg:            "#000000",
@@ -200,6 +201,23 @@ export function CarHUD({ car, onClose }: CarHUDProps) {
             letterSpacing: "0.22em",
             marginBottom:  8,
             paddingBottom: 8,
+            borderBottom:  `1px solid ${DS.divider}`,
+          }}
+        >
+          DRIVING PROFILE
+        </div>
+
+        <CarStatBlock car={car} labelWidth={82} />
+
+        <div
+          style={{
+            fontSize:      8,
+            color:         DS.textDisabled,
+            letterSpacing: "0.22em",
+            margin:        "14px 0 8px",
+            paddingBottom: 8,
+            paddingTop:    12,
+            borderTop:     `1px solid ${DS.divider}`,
             borderBottom:  `1px solid ${DS.divider}`,
           }}
         >
