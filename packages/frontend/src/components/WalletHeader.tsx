@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { formatDrift } from "@chain-drift/shared";
 import { useWallet } from "../context/WalletContext";
-import { mintCar, fetchMintFeeDrift, type CarArchetype } from "../services/carNft";
+import { useMintCar } from "../hooks/useMintCar";
+import { useWinnings } from "../hooks/useWinnings";
 
 const DS = {
   bg:          "#000000",
@@ -14,16 +16,6 @@ const DS = {
   danger:      "#FF4040",
   font:        "'JetBrains Mono', monospace",
 };
-
-const ARCHETYPES: { id: CarArchetype; label: string }[] = [
-  { id: "sport",    label: "SPORT"    },
-  { id: "muscle",   label: "MUSCLE"   },
-  { id: "stealth",  label: "STEALTH"  },
-  { id: "electric", label: "ELECTRIC" },
-  { id: "street",   label: "STREET"   },
-];
-
-type MintState = "idle" | "minting" | "success" | "error";
 
 interface WalletHUDProps {
   fleetCount?: number;
@@ -82,34 +74,34 @@ function MintingLabel() {
 
 export function WalletHUD({ fleetCount, onMintSuccess }: WalletHUDProps) {
   const { wallet, disconnectWallet } = useWallet();
-  const [isOpen, setIsOpen]         = useState(false);
-  const [driftBal, setDriftBal]     = useState<number | null>(null);
-  const [mintFee, setMintFee]       = useState<number>(0);
-  const drawerRef                   = useRef<HTMLDivElement>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [mintOpen, setMintOpen] = useState(false);
+  const drawerRef = useRef<HTMLDivElement>(null);
 
-  // Mint panel state
-  const [mintOpen, setMintOpen]     = useState(false);
-  const [archetype, setArchetype]   = useState<CarArchetype>("sport");
-  const [mintState, setMintState]   = useState<MintState>("idle");
-  const [txHash, setTxHash]         = useState("");
-  const [errorMsg, setErrorMsg]     = useState("");
+  const {
+    mintFee,
+    driftBalance,
+    canAfford,
+    state: mintState,
+    txHash,
+    error: errorMsg,
+    mint,
+    reset: resetMint,
+  } = useMintCar();
 
-  // The fee is an owner-settable value on the contract, not a constant.
+  const {
+    pending,
+    state: claimState,
+    error: claimError,
+    claim,
+    refresh: refreshWinnings,
+  } = useWinnings();
+
+  // Opening the drawer is the moment the pending figure is looked at, and a
+  // race may have settled since the last read.
   useEffect(() => {
-    fetchMintFeeDrift().then(setMintFee).catch(() => setMintFee(0));
-  }, []);
-
-  useEffect(() => {
-    if (!wallet?.address) { setDriftBal(null); return; }
-    setDriftBal(wallet.driftBalance ?? 0);
-  }, [wallet?.address, wallet?.driftBalance]);
-
-  // Refresh balance after successful mint
-  useEffect(() => {
-    if (mintState === "success" && wallet?.address) {
-      setDriftBal(wallet.driftBalance ?? 0);
-    }
-  }, [mintState, wallet?.address, wallet?.driftBalance]);
+    if (isOpen) void refreshWinnings();
+  }, [isOpen, refreshWinnings]);
 
   // Close drawer on outside click
   useEffect(() => {
@@ -125,29 +117,13 @@ export function WalletHUD({ fleetCount, onMintSuccess }: WalletHUDProps) {
 
   if (!wallet) return null;
 
-  const gasBal              = wallet.balance ?? 0;
-  const driftDisp           = driftBal ?? 0;
-  const hasSufficientBalance = driftBal !== null && mintFee > 0 && driftBal >= mintFee;
-
-  const handleMint = async () => {
-    if (mintState === "minting") return;
-    setMintState("minting");
-    setErrorMsg("");
-    try {
-      if (!wallet?.address) throw new Error("Wallet not connected");
-      const result = await mintCar(wallet.address, archetype);
-      setTxHash(result.txHash);
-      setMintState("success");
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Transaction failed");
-      setMintState("error");
-    }
-  };
+  const gasBal      = wallet.balance ?? 0;
+  const driftDisp   = driftBalance ?? 0;
+  const hasWinnings = pending !== null && pending > 0n;
 
   const handleMintSuccess = () => {
     setMintOpen(false);
-    setMintState("idle");
-    setTxHash("");
+    resetMint();
     setIsOpen(false);
     onMintSuccess?.();
   };
@@ -158,11 +134,9 @@ export function WalletHUD({ fleetCount, onMintSuccess }: WalletHUDProps) {
       return;
     }
     setMintOpen((v) => !v);
-    if (mintState === "error") {
-      setMintState("idle");
-      setErrorMsg("");
-    }
+    if (mintState === "error") resetMint();
   };
+
 
   return (
     <>
@@ -227,7 +201,7 @@ export function WalletHUD({ fleetCount, onMintSuccess }: WalletHUDProps) {
           {/* DRIFT */}
           <span style={{ fontSize: 8, color: DS.textDisabled, letterSpacing: "0.14em" }}>DRIFT</span>
           <span style={{ fontSize: 10, fontWeight: 700, color: DS.textPrimary }}>
-            {driftBal === null ? "—" : fmtBalance(driftDisp)}
+            {driftBalance === null ? "—" : fmtBalance(driftDisp)}
           </span>
 
           <Chevron open={isOpen} />
@@ -276,7 +250,7 @@ export function WalletHUD({ fleetCount, onMintSuccess }: WalletHUDProps) {
             <div style={{ padding: "12px 16px", borderBottom: `1px solid ${DS.divider}` }}>
               {[
                 { label: "ETH",        value: fmtBalance(gasBal)    },
-                { label: "DRIFT", value: driftBal === null ? "—" : fmtBalance(driftDisp) },
+                { label: "DRIFT", value: driftBalance === null ? "—" : fmtBalance(driftDisp) },
               ].map(({ label, value }) => (
                 <div
                   key={label}
@@ -324,6 +298,64 @@ export function WalletHUD({ fleetCount, onMintSuccess }: WalletHUDProps) {
               ))}
             </div>
 
+            {/* ── Unclaimed winnings ── */}
+            {hasWinnings && (
+              <div style={{ padding: "12px 16px", borderBottom: `1px solid ${DS.divider}` }}>
+                <div
+                  style={{
+                    display:        "flex",
+                    justifyContent: "space-between",
+                    alignItems:     "center",
+                    marginBottom:   8,
+                  }}
+                >
+                  <span style={{ fontSize: 7, color: DS.accent, letterSpacing: "0.18em" }}>
+                    UNCLAIMED
+                  </span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: DS.accent }}>
+                    {formatDrift(pending ?? 0n)} DRIFT
+                  </span>
+                </div>
+
+                {claimState === "error" && (
+                  <div
+                    style={{
+                      marginBottom:  8,
+                      padding:       "6px 8px",
+                      border:        `1px solid ${DS.danger}`,
+                      fontSize:      7,
+                      color:         DS.danger,
+                      letterSpacing: "0.08em",
+                      lineHeight:    1.6,
+                      wordBreak:     "break-all",
+                    }}
+                  >
+                    {claimError}
+                  </div>
+                )}
+
+                <button
+                  onClick={claimState === "claiming" ? undefined : claim}
+                  disabled={claimState === "claiming"}
+                  style={{
+                    width:         "100%",
+                    padding:       "8px",
+                    background:    claimState === "claiming" ? "transparent" : DS.accent,
+                    border:        `1px solid ${DS.accent}`,
+                    color:         claimState === "claiming" ? DS.accent : DS.bg,
+                    fontFamily:    DS.font,
+                    fontSize:      8,
+                    fontWeight:    700,
+                    letterSpacing: "0.2em",
+                    cursor:        claimState === "claiming" ? "wait" : "pointer",
+                    transition:    "opacity 150ms",
+                  }}
+                >
+                  {claimState === "claiming" ? "CLAIMING..." : "CLAIM WINNINGS"}
+                </button>
+              </div>
+            )}
+
             {/* ── Mint Vehicle button ── */}
             {onMintSuccess && (
               <div style={{ padding: "10px 12px", borderBottom: `1px solid ${DS.divider}` }}>
@@ -363,47 +395,17 @@ export function WalletHUD({ fleetCount, onMintSuccess }: WalletHUDProps) {
             {/* ── Inline mint panel ── */}
             {mintOpen && mintState !== "success" && (
               <div className="cd-mint-panel" style={{ borderBottom: `1px solid ${DS.divider}` }}>
-                {/* Archetype selector */}
+                {/* What a mint gives you */}
                 <div style={{ padding: "12px 12px 0" }}>
-                  <div style={{ fontSize: 7, color: DS.textDisabled, letterSpacing: "0.22em", marginBottom: 8 }}>
-                    SELECT ARCHETYPE
+                  <div style={{ fontSize: 7, color: DS.textDisabled, letterSpacing: "0.22em", marginBottom: 6 }}>
+                    NEXT IN COLLECTION
                   </div>
-                  <div style={{ display: "flex", gap: 4 }}>
-                    {ARCHETYPES.map(({ id, label }) => {
-                      const active   = archetype === id;
-                      const disabled = mintState === "minting";
-                      return (
-                        <button
-                          key={id}
-                          onClick={() => !disabled && setArchetype(id)}
-                          style={{
-                            flex:          1,
-                            padding:       "7px 0",
-                            background:    active ? DS.textPrimary : "transparent",
-                            border:        `1px solid ${active ? DS.textPrimary : DS.border}`,
-                            color:         active ? DS.bg : DS.textDisabled,
-                            fontFamily:    DS.font,
-                            fontSize:      7,
-                            fontWeight:    700,
-                            letterSpacing: "0.1em",
-                            cursor:        disabled ? "not-allowed" : "pointer",
-                            transition:    "background 150ms, color 150ms, border-color 150ms",
-                          }}
-                          onMouseEnter={(e) => {
-                            if (!active && !disabled)
-                              (e.currentTarget as HTMLButtonElement).style.borderColor = DS.textMeta;
-                          }}
-                          onMouseLeave={(e) => {
-                            if (!active && !disabled)
-                              (e.currentTarget as HTMLButtonElement).style.borderColor = DS.border;
-                          }}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
+                  <div style={{ fontSize: 7, color: DS.textMeta, letterSpacing: "0.1em", lineHeight: 1.8 }}>
+                    The token ID decides the car — model, rarity and traits
+                    come with it.
                   </div>
                 </div>
+
 
                 {/* Cost row */}
                 <div
@@ -433,14 +435,14 @@ export function WalletHUD({ fleetCount, onMintSuccess }: WalletHUDProps) {
                       style={{
                         fontSize:   12,
                         fontWeight: 700,
-                        color:      driftBal === null
+                        color:      driftBalance === null
                           ? DS.textDisabled
-                          : hasSufficientBalance
+                          : canAfford
                           ? DS.textPrimary
                           : DS.danger,
                       }}
                     >
-                      {driftBal === null ? "—" : `${driftBal.toFixed(2)}`}
+                      {driftBalance === null ? "—" : `${driftBalance.toFixed(2)}`}
                     </div>
                   </div>
                 </div>
@@ -482,35 +484,35 @@ export function WalletHUD({ fleetCount, onMintSuccess }: WalletHUDProps) {
                     </div>
                   ) : (
                     <button
-                      onClick={hasSufficientBalance ? handleMint : undefined}
-                      disabled={!hasSufficientBalance}
+                      onClick={canAfford ? mint : undefined}
+                      disabled={!canAfford}
                       style={{
                         width:         "100%",
                         padding:       "10px",
                         background:    "transparent",
-                        border:        `1px solid ${hasSufficientBalance ? DS.textPrimary : DS.border}`,
-                        color:         hasSufficientBalance ? DS.textPrimary : DS.textDisabled,
+                        border:        `1px solid ${canAfford ? DS.textPrimary : DS.border}`,
+                        color:         canAfford ? DS.textPrimary : DS.textDisabled,
                         fontFamily:    DS.font,
                         fontSize:      8,
                         fontWeight:    700,
                         letterSpacing: "0.2em",
-                        cursor:        hasSufficientBalance ? "pointer" : "not-allowed",
+                        cursor:        canAfford ? "pointer" : "not-allowed",
                         transition:    "background 150ms, color 150ms",
                       }}
                       onMouseEnter={(e) => {
-                        if (hasSufficientBalance) {
+                        if (canAfford) {
                           (e.currentTarget as HTMLButtonElement).style.background = DS.textPrimary;
                           (e.currentTarget as HTMLButtonElement).style.color = DS.bg;
                         }
                       }}
                       onMouseLeave={(e) => {
-                        if (hasSufficientBalance) {
+                        if (canAfford) {
                           (e.currentTarget as HTMLButtonElement).style.background = "transparent";
                           (e.currentTarget as HTMLButtonElement).style.color = DS.textPrimary;
                         }
                       }}
                     >
-                      {hasSufficientBalance ? "CONFIRM MINT" : "INSUFFICIENT DRIFT"}
+                      {canAfford ? "CONFIRM MINT" : "INSUFFICIENT DRIFT"}
                     </button>
                   )}
                 </div>

@@ -54,8 +54,3 @@ export function requireAddress(
   }
   return address;
 }
-
-// ─── Development fallbacks ────────────────────────────────────────────────
-
-/** Show mock cars when the wallet owns none. Useful before the first mint. */
-export const USE_MOCK_FALLBACK = import.meta.env.VITE_USE_MOCK_FALLBACK !== "false";

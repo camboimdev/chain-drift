@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useRaceStore } from "../stores/raceStore";
 import type { RaceParticipant, RaceResult } from "@chain-drift/shared";
 import { formatDrift } from "@chain-drift/shared";
+import { useWinnings } from "../hooks/useWinnings";
 
 const DS = {
   bg: "#000000",
@@ -374,13 +375,21 @@ function FinishScreen({
   result,
   userCarId,
   onClose,
+  onRaceAgain,
 }: {
   result: RaceResult;
   userCarId: string | null;
   onClose: () => void;
+  onRaceAgain: () => void;
 }) {
   const userPosition = result.positions.findIndex((p) => p.car.id === userCarId) + 1;
   const userPayout = result.payouts.find((p) => p.participantId === userCarId);
+
+  // The payout is already booked against the player's address; `claim()` is
+  // what actually moves it. The wallet drawer is hidden behind the race view,
+  // so the offer has to be here too.
+  const { pending, state: claimState, error: claimError, claim } = useWinnings();
+  const hasWinnings = pending !== null && pending > 0n && claimState !== "success";
 
   return (
     <div
@@ -579,6 +588,60 @@ function FinishScreen({
           </div>
         )}
 
+        {/* Claim — the escrow credits, it does not transfer. */}
+        {hasWinnings && (
+          <div style={{ marginBottom: 20 }}>
+            <button
+              onClick={claimState === "claiming" ? undefined : claim}
+              disabled={claimState === "claiming"}
+              style={{
+                width: "100%",
+                padding: "14px",
+                background: claimState === "claiming" ? "transparent" : DS.accent,
+                border: `1px solid ${DS.accent}`,
+                color: claimState === "claiming" ? DS.accent : DS.bg,
+                fontFamily: DS.font,
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: "0.2em",
+                cursor: claimState === "claiming" ? "wait" : "pointer",
+              }}
+            >
+              {claimState === "claiming"
+                ? "CLAIMING..."
+                : `CLAIM ${formatDrift(pending ?? 0n)} DRIFT`}
+            </button>
+            {claimState === "error" && (
+              <div
+                style={{
+                  marginTop: 8,
+                  fontSize: 8,
+                  color: "#FF4444",
+                  letterSpacing: "0.08em",
+                  lineHeight: 1.6,
+                  wordBreak: "break-all",
+                }}
+              >
+                {claimError}
+              </div>
+            )}
+          </div>
+        )}
+
+        {claimState === "success" && (
+          <div
+            style={{
+              marginBottom: 20,
+              fontSize: 8,
+              color: DS.accent,
+              letterSpacing: "0.18em",
+              textAlign: "center",
+            }}
+          >
+            ● WINNINGS TRANSFERRED
+          </div>
+        )}
+
         {/* Actions */}
         <div style={{ display: "flex", gap: 12 }}>
           <button
@@ -608,7 +671,7 @@ function FinishScreen({
             RETURN TO GARAGE
           </button>
           <button
-            onClick={() => {}}
+            onClick={onRaceAgain}
             style={{
               flex: 1,
               padding: "14px",
@@ -675,9 +738,10 @@ function CameraModeIndicator({ mode }: { mode: string }) {
 
 interface RaceUIProps {
   onReturnToGarage: () => void;
+  onRaceAgain: () => void;
 }
 
-export function RaceUI({ onReturnToGarage }: RaceUIProps) {
+export function RaceUI({ onReturnToGarage, onRaceAgain }: RaceUIProps) {
   const {
     raceState,
     participants,
@@ -703,6 +767,11 @@ export function RaceUI({ onReturnToGarage }: RaceUIProps) {
     onReturnToGarage();
   };
 
+  const handleRaceAgain = () => {
+    resetRace();
+    onRaceAgain();
+  };
+
   return (
     <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
       {raceState === "COUNTDOWN" && countdown > 0 && (
@@ -724,7 +793,12 @@ export function RaceUI({ onReturnToGarage }: RaceUIProps) {
 
       {raceState === "FINISHED" && result && (
         <div style={{ pointerEvents: "auto" }}>
-          <FinishScreen result={result} userCarId={userCarId} onClose={handleClose} />
+          <FinishScreen
+            result={result}
+            userCarId={userCarId}
+            onClose={handleClose}
+            onRaceAgain={handleRaceAgain}
+          />
         </div>
       )}
     </div>

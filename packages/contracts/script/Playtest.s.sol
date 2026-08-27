@@ -54,15 +54,15 @@ contract Playtest is DeployerKey {
         }
         drift.approve(address(carNft), type(uint256).max);
         drift.approve(address(escrow), type(uint256).max);
-        carNft.mint("sport");
+        carNft.mint();
         vm.stopBroadcast();
     }
 
-    /// @notice Mint `count` cars of one archetype to the deployer.
+    /// @notice Mint `count` cars to the deployer.
     /// @dev Restores a garage after a redeploy. Token IDs restart at 1 on the
-    ///      new collection, so a car keeps its archetype but not its old ID —
-    ///      the 3D model and rarity are derived from the ID, not stored.
-    function mintCars(uint256 count, string calldata archetype) external {
+    ///      new collection, so the cars come back as different vehicles — the
+    ///      3D model and rarity are derived from the ID, not stored.
+    function mintCars(uint256 count) external {
         uint256 key = deployerPrivateKey();
         address me = vm.addr(key);
 
@@ -71,7 +71,7 @@ contract Playtest is DeployerKey {
             drift.approve(address(carNft), type(uint256).max);
         }
         for (uint256 i = 0; i < count; ++i) {
-            carNft.mint(archetype);
+            carNft.mint();
         }
         vm.stopBroadcast();
     }

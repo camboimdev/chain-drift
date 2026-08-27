@@ -24,7 +24,6 @@ export function buildCarNFT(
     name:          options.name ?? `Chain Drift #${String(tokenId).padStart(3, "0")}`,
     owner,
     rarity:        options.rarity ?? "Common",
-    equippedParts: {},
     attributes:    options.attributes,
     modelUrl:      options.modelUrl,
     imageUrl:      options.imageUrl,

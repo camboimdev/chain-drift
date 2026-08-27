@@ -11,7 +11,7 @@ import { useRaceStore } from "../stores/raceStore";
 import type { OnChainOutcome } from "../stores/raceStore";
 import { preloadCarModels } from "../services/carModelPreloader";
 import { TRACK_CONFIG } from "../config/trackConfig";
-import { calculateCarStats } from "@chain-drift/shared";
+import { calculateCarStats, calculateRacePayouts, formatDrift } from "@chain-drift/shared";
 import type { CarNFT } from "@chain-drift/shared";
 
 // ─── Design System ────────────────────────────────────────────────
@@ -353,22 +353,32 @@ function ParticipantPanel({
 }
 
 // ─── Race Lobby ───────────────────────────────────────────────────
-function RaceLobby({
+/**
+ * The grid, after the chain has already decided the race.
+ *
+ * By the time this renders, the escrow has locked the room, Chainlink VRF has
+ * answered and the payouts are credited. Nothing here is matchmaking — the
+ * player is looking at a settled classification before watching it play out.
+ */
+function StartingGrid({
   cars,
   userCarId,
+  raceId,
+  entryFee,
   onStartRace,
 }: {
   cars: CarNFT[];
   userCarId: string;
+  raceId: bigint;
+  entryFee: bigint;
   onStartRace: () => void;
 }) {
   useEffect(() => {
     injectStyles();
   }, []);
 
-  const raceId = useRef(
-    `#${String(Math.floor(Math.random() * 9999)).padStart(4, "0")}`
-  ).current;
+  // The same split the escrow applied, reproduced to the wei.
+  const { prizePool, payouts } = calculateRacePayouts(entryFee, cars.length);
 
   return (
     <div
@@ -414,7 +424,7 @@ function RaceLobby({
               letterSpacing: "0.15em",
             }}
           >
-            RACE LOBBY
+            STARTING GRID
           </div>
         </div>
 
@@ -445,7 +455,7 @@ function RaceLobby({
                 letterSpacing: "0.1em",
               }}
             >
-              {raceId}
+              #{String(raceId)}
             </div>
           </div>
           <div>
@@ -467,7 +477,7 @@ function RaceLobby({
                 letterSpacing: "0.1em",
               }}
             >
-              READY
+              SETTLED
             </div>
           </div>
           <div>
@@ -479,7 +489,7 @@ function RaceLobby({
                 marginBottom: 2,
               }}
             >
-              BLOCK
+              SOURCE
             </div>
             <div
               style={{
@@ -489,7 +499,7 @@ function RaceLobby({
                 letterSpacing: "0.1em",
               }}
             >
-              PENDING
+              VRF
             </div>
           </div>
         </div>
@@ -527,7 +537,7 @@ function RaceLobby({
             }}
           >
             <span>PARTICIPANTS</span>
-            <span style={{ color: DS.accent }}>{cars.length} / 4 CONFIRMED</span>
+            <span style={{ color: DS.accent }}>{cars.length} ON THE GRID</span>
           </div>
 
           <div
@@ -577,8 +587,8 @@ function RaceLobby({
             <DataRow label="FORMAT" value="SPRINT" />
             <DataRow label="DISTANCE" value={`${TRACK_CONFIG.totalDistance}M`} />
             <DataRow label="LAPS" value="01" />
-            <DataRow label="ENTRY FEE" value="1 DRIFT" />
-            <DataRow label="PRIZE POOL" value="4 DRIFT" />
+            <DataRow label="ENTRY FEE" value={`${formatDrift(entryFee)} DRIFT`} />
+            <DataRow label="PRIZE POOL" value={`${formatDrift(prizePool)} DRIFT`} />
           </div>
 
           {/* Prize breakdown */}
@@ -595,16 +605,9 @@ function RaceLobby({
             >
               PRIZE DISTRIBUTION
             </div>
-            {(
-              [
-                { pos: "01", amount: "500", pct: "50%" },
-                { pos: "02", amount: "300", pct: "30%" },
-                { pos: "03", amount: "150", pct: "15%" },
-                { pos: "04", amount: " 50", pct: " 5%" },
-              ] as const
-            ).map(({ pos, amount, pct }) => (
+            {payouts.map((amount, i) => (
               <div
-                key={pos}
+                key={i}
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
@@ -620,7 +623,7 @@ function RaceLobby({
                     letterSpacing: "0.1em",
                   }}
                 >
-                  {pos}
+                  {String(i + 1).padStart(2, "0")}
                 </span>
                 <span
                   style={{
@@ -629,7 +632,9 @@ function RaceLobby({
                     letterSpacing: "0.08em",
                   }}
                 >
-                  {pct}
+                  {prizePool === 0n
+                    ? "0%"
+                    : `${Math.round(Number((amount * 1000n) / prizePool) / 10)}%`}
                 </span>
                 <span
                   style={{
@@ -640,43 +645,26 @@ function RaceLobby({
                     fontVariantNumeric: "tabular-nums",
                   }}
                 >
-                  {amount} DRIFT
+                  {formatDrift(amount)} DRIFT
                 </span>
               </div>
             ))}
           </div>
 
-          {/* Betting stub */}
           <div
             style={{
-              border: `1px solid ${DS.divider}`,
-              padding: 12,
               marginTop: "auto",
+              fontSize: 7,
+              color: DS.textDisabled,
+              lineHeight: 1.8,
+              letterSpacing: "0.08em",
             }}
           >
-            <div
-              style={{
-                fontSize: 7,
-                color: DS.textDisabled,
-                letterSpacing: "0.18em",
-                marginBottom: 6,
-              }}
-            >
-              BETTING MODULE
-            </div>
-            <div
-              style={{
-                fontSize: 7,
-                color: DS.textDisabled,
-                lineHeight: 1.7,
-                letterSpacing: "0.08em",
-              }}
-            >
-              ON-CHAIN WAGERING
-              <br />
-              PENDING INTEGRATION
-            </div>
+            ALREADY CREDITED BY THE ESCROW.
+            <br />
+            CLAIM FROM THE WALLET PANEL.
           </div>
+
         </div>
       </div>
 
@@ -700,10 +688,10 @@ function RaceLobby({
             letterSpacing: "0.15em",
           }}
         >
-          {cars.length} PARTICIPANTS LOCKED
+          CLASSIFICATION SETTLED · {cars.length} CARS
         </span>
         <button className="cd-btn" onClick={onStartRace}>
-          <span>INITIATE RACE</span>
+          <span>WATCH THE RACE</span>
         </button>
       </div>
     </div>
@@ -719,9 +707,9 @@ interface AssetProgress {
   done: boolean;
 }
 
-// Floor for the matchmaking screen so its staged steps (up to 1050ms) read
-// even when every model is already cached.
-const MATCHMAKING_MIN_MS = 2000;
+// Floor for the loading screen so its staged steps (up to 1400ms) read even
+// when every model is already cached.
+const LOADING_MIN_MS = 2000;
 
 // Ceiling on the asset gate. Waiting on the models is right — a wireframe
 // placeholder must not be on the starting grid — but IPFS can degrade to
@@ -730,17 +718,11 @@ const MATCHMAKING_MIN_MS = 2000;
 // Past this deadline the race starts with whatever arrived.
 const ASSET_DEADLINE_MS = 20000;
 
-// ─── Matchmaking Screen ───────────────────────────────────────────
-const MATCHMAKING_STEPS = [
-  { label: "CONNECTING TO BASE NETWORK", delay: 0 },
-  { label: "VERIFYING CAR NFT OWNERSHIP", delay: 350 },
-  { label: "VALIDATING ENTRY FEE ESCROW", delay: 700 },
-  { label: "SCANNING FOR OPPONENTS", delay: 1050 },
-] as const;
-
-// The asset step is last: it is the one the countdown actually waits on.
-const ASSET_STEP_DELAY = 1400;
-const STEP_DELAYS = [...MATCHMAKING_STEPS.map((s) => s.delay), ASSET_STEP_DELAY];
+// ─── Loading Sequence ─────────────────────────────────────────────
+// Every step but the last is already true when this screen appears: the room
+// locked, VRF answered, the escrow credited. They are stated, not performed.
+// The asset step is the only one the countdown actually waits on.
+const STEP_DELAYS = [0, 350, 700, 1050, 1400];
 
 function TerminalStep({
   label,
@@ -790,7 +772,15 @@ function TerminalStep({
   );
 }
 
-function MatchmakingScreen({ assets }: { assets: AssetProgress | null }) {
+function LoadingSequence({
+  raceId,
+  gridSize,
+  assets,
+}: {
+  raceId: bigint;
+  gridSize: number;
+  assets: AssetProgress | null;
+}) {
   useEffect(() => {
     injectStyles();
   }, []);
@@ -803,6 +793,13 @@ function MatchmakingScreen({ assets }: { assets: AssetProgress | null }) {
     );
     return () => timers.forEach(clearTimeout);
   }, []);
+
+  const steps = [
+    `RACE #${raceId} LOCKED`,
+    "VRF CALLBACK RECEIVED",
+    `CLASSIFICATION READ · ${gridSize} CARS`,
+    "PAYOUTS CREDITED TO ESCROW",
+  ];
 
   const assetDone   = assets?.done ?? false;
   const assetStatus = !assets
@@ -852,25 +849,19 @@ function MatchmakingScreen({ assets }: { assets: AssetProgress | null }) {
             letterSpacing: "0.25em",
           }}
         >
-          SIGNAL ACQUISITION
+          REPLAYING A SETTLED RACE
         </div>
       </div>
 
       {/* Terminal steps */}
       <div style={{ width: 420, maxWidth: "90vw" }}>
-        {MATCHMAKING_STEPS.map((step, i) => (
-          <TerminalStep
-            key={step.label}
-            label={step.label}
-            status="OK"
-            visible={i < visibleCount}
-            ok
-          />
+        {steps.map((label, i) => (
+          <TerminalStep key={label} label={label} status="OK" visible={i < visibleCount} ok />
         ))}
         <TerminalStep
           label="STREAMING CAR ASSETS"
           status={assetStatus}
-          visible={visibleCount > MATCHMAKING_STEPS.length}
+          visible={visibleCount > steps.length}
           ok={assetDone}
         />
       </div>
@@ -983,13 +974,26 @@ function RaceLoadingScreen({ assets }: { assets: AssetProgress | null }) {
 interface RaceSceneProps {
   cars: CarNFT[];
   userCarId: string;
-  /** Settled on-chain result. Absent for an exhibition run against AI cars. */
-  outcome?: OnChainOutcome;
+  /** The escrow's race ID — the one the grid screen and the chain agree on. */
+  raceId: bigint;
+  /** Per-racer stake in wei, as paid into the escrow. */
+  entryFee: bigint;
+  /** Settled on-chain result. A race is never animated without one. */
+  outcome: OnChainOutcome;
   onReturnToGarage: () => void;
+  onRaceAgain: () => void;
 }
 
-export function RaceScene({ cars, userCarId, outcome, onReturnToGarage }: RaceSceneProps) {
-  const { raceState, participants, initializeRace, startMatchmaking, startCountdown } =
+export function RaceScene({
+  cars,
+  userCarId,
+  raceId,
+  entryFee,
+  outcome,
+  onReturnToGarage,
+  onRaceAgain,
+}: RaceSceneProps) {
+  const { raceState, participants, initializeRace, startLoading, startCountdown } =
     useRaceStore();
 
   const [assets, setAssets] = useState<AssetProgress | null>(null);
@@ -1015,7 +1019,7 @@ export function RaceScene({ cars, userCarId, outcome, onReturnToGarage }: RaceSc
     if (startedRef.current) return;
     startedRef.current = true;
 
-    startMatchmaking();
+    startLoading();
     setAssets({ loaded: 0, total: 0, done: false });
 
     const preloaded = preloadCarModels(
@@ -1034,7 +1038,7 @@ export function RaceScene({ cars, userCarId, outcome, onReturnToGarage }: RaceSc
     });
 
     const minimumOnScreen = new Promise<void>((resolve) =>
-      setTimeout(resolve, MATCHMAKING_MIN_MS)
+      setTimeout(resolve, LOADING_MIN_MS)
     );
     const deadline = new Promise<void>((resolve) =>
       setTimeout(resolve, ASSET_DEADLINE_MS)
@@ -1052,16 +1056,18 @@ export function RaceScene({ cars, userCarId, outcome, onReturnToGarage }: RaceSc
 
   if (raceState === "IDLE" && participants.length > 0) {
     return (
-      <RaceLobby
+      <StartingGrid
         cars={participants.map((p) => p.car)}
         userCarId={userCarId}
+        raceId={raceId}
+        entryFee={entryFee}
         onStartRace={handleStartRace}
       />
     );
   }
 
-  if (raceState === "MATCHMAKING") {
-    return <MatchmakingScreen assets={assets} />;
+  if (raceState === "LOADING") {
+    return <LoadingSequence raceId={raceId} gridSize={participants.length} assets={assets} />;
   }
 
   if (participants.length === 0) {
@@ -1125,7 +1131,7 @@ export function RaceScene({ cars, userCarId, outcome, onReturnToGarage }: RaceSc
         </Suspense>
       </Canvas>
 
-      <RaceUI onReturnToGarage={onReturnToGarage} />
+      <RaceUI onReturnToGarage={onReturnToGarage} onRaceAgain={onRaceAgain} />
     </div>
   );
 }

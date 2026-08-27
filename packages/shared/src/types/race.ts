@@ -1,6 +1,6 @@
 import type { CarNFT } from "./car";
 
-export type RaceState = "IDLE" | "MATCHMAKING" | "COUNTDOWN" | "RACING" | "FINISHED";
+export type RaceState = "IDLE" | "LOADING" | "COUNTDOWN" | "RACING" | "FINISHED";
 
 export interface CarStats {
   speed: number;       // Base top speed (0-200)
@@ -12,7 +12,6 @@ export interface CarStats {
 export interface RaceParticipant {
   car: CarNFT;
   stats: CarStats;
-  weight: number;      // Calculated win probability weight
   laneIndex: number;   // 0-3 for 4 lanes
   progress: number;    // 0-1 progress along track
   currentSpeed: number; // Current speed during animation
@@ -31,12 +30,6 @@ export interface RaceResult {
     amount: bigint;
     position: number;
   }[];
-}
-
-export interface RaceBet {
-  carId: string;
-  amount: number;
-  odds: number;
 }
 
 export interface RaceConfig {

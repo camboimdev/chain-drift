@@ -1,21 +1,16 @@
 import { create } from "zustand";
 import type { CarNFT, RaceState, RaceParticipant, RaceResult, RaceConfig, CameraState, CameraMode } from "@chain-drift/shared";
-import {
-  calculateCarStats,
-  calculateRacePayouts,
-  calculateWinProbabilities,
-  selectWinner,
-  RACE_ENTRY_FEE,
-} from "@chain-drift/shared";
+import { calculateCarStats, RACE_ENTRY_FEE } from "@chain-drift/shared";
 import { TRACK_CONFIG } from "../config/trackConfig";
 import { enterRace } from "../services/raceContract";
 
 /**
  * The settled result of an on-chain race, as emitted by `RaceFinished`.
  *
- * When present it is authoritative: the animation finishes in this order and
- * the results screen shows these exact amounts. Without it the race is a local
- * exhibition run and the outcome is simulated.
+ * Authoritative, and the only way a race is ever started: Chainlink VRF picked
+ * this order and the escrow has already paid it out, so the animation replays
+ * it rather than rolling its own. The car the player watches win has to be the
+ * car the contract paid.
  */
 export interface OnChainOutcome {
   /** Car token IDs, index 0 = winner. */
@@ -42,8 +37,8 @@ interface RaceStore {
   positionPayouts: bigint[];
 
   // Actions
-  initializeRace: (cars: CarNFT[], userCarId: string, outcome?: OnChainOutcome) => void;
-  startMatchmaking: () => void;
+  initializeRace: (cars: CarNFT[], userCarId: string, outcome: OnChainOutcome) => void;
+  startLoading: () => void;
   startCountdown: () => void;
   startRace: () => void;
   updateProgress: (carId: string, progress: number, speed: number) => void;
@@ -88,74 +83,37 @@ export const useRaceStore = create<RaceStore>((set) => ({
   predeterminedPositions: [],
   positionPayouts: [],
 
-  initializeRace: (cars: CarNFT[], userCarId: string, outcome?: OnChainOutcome) => {
-    // Calculate stats and weights for each car
-    // Assign lanes - spread across available lanes
+  initializeRace: (cars: CarNFT[], userCarId: string, outcome: OnChainOutcome) => {
+    // Spread the grid across the centre lanes.
     const laneCount = Math.min(cars.length, TRACK_CONFIG.laneCount);
+    const baseLane = Math.floor(TRACK_CONFIG.laneCount / 2) - Math.floor(laneCount / 2);
 
-    const participantsWithStats = cars.map((car, index) => {
-      const stats = calculateCarStats(car);
-      // Distribute cars across lanes (center lanes preferred)
-      const baseLane = Math.floor(TRACK_CONFIG.laneCount / 2) - Math.floor(laneCount / 2);
-      const laneIndex = Math.min(
-        TRACK_CONFIG.laneCount - 1,
-        Math.max(0, baseLane + index)
-      );
-      
-      return {
-        car,
-        stats,
-        weight: 0, // Will be calculated below
-        laneIndex,
-        progress: 0,
-        currentSpeed: 0,
-        position: index + 1,
-      };
-    });
+    const participants: RaceParticipant[] = cars.map((car, index) => ({
+      car,
+      stats: calculateCarStats(car),
+      laneIndex: Math.min(TRACK_CONFIG.laneCount - 1, Math.max(0, baseLane + index)),
+      progress: 0,
+      currentSpeed: 0,
+      position: index + 1,
+    }));
 
-    // Calculate win probabilities
-    const weights = calculateWinProbabilities(participantsWithStats);
-    participantsWithStats.forEach((p, i) => {
-      p.weight = weights[i];
-    });
+    const byTokenId = new Map(participants.map((p) => [p.car.tokenId, p.car.id]));
+    const positions = outcome.carTokenIds
+      .map((tokenId) => byTokenId.get(tokenId))
+      .filter((id): id is string => id !== undefined);
 
-    // A settled race already has an outcome — Chainlink VRF picked it and the
-    // escrow paid it out. The animation replays that order rather than rolling
-    // its own, otherwise the car the player watches win is not the car the
-    // contract paid.
-    let positions: string[];
-    let positionPayouts: bigint[];
-
-    if (outcome && outcome.carTokenIds.length > 0) {
-      const byTokenId = new Map(participantsWithStats.map((p) => [p.car.tokenId, p.car.id]));
-      positions = outcome.carTokenIds
-        .map((tokenId) => byTokenId.get(tokenId))
-        .filter((id): id is string => id !== undefined);
-
-      // A car on the grid that the settled order does not name would otherwise
-      // sort to -1 and be drawn ahead of the winner. Park it at the back.
-      for (const p of participantsWithStats) {
-        if (!positions.includes(p.car.id)) positions.push(p.car.id);
-      }
-
-      positionPayouts = outcome.payouts;
-    } else {
-      const winner = selectWinner(participantsWithStats);
-      positions = generateRacePositions(participantsWithStats, winner.car.id);
-      // An exhibition run pays nothing, but it is shown at the stakes a real
-      // race of this size would carry.
-      positionPayouts = calculateRacePayouts(
-        DEFAULT_CONFIG.entryFee,
-        participantsWithStats.length
-      ).payouts;
+    // A car on the grid that the settled order does not name would otherwise
+    // sort to -1 and be drawn ahead of the winner. Park it at the back.
+    for (const p of participants) {
+      if (!positions.includes(p.car.id)) positions.push(p.car.id);
     }
 
     set({
-      participants: participantsWithStats,
+      participants,
       userCarId,
       predeterminedWinner: positions[0] ?? null,
       predeterminedPositions: positions,
-      positionPayouts,
+      positionPayouts: outcome.payouts,
       raceState: "IDLE",
       result: null,
       countdown: 3,
@@ -163,8 +121,8 @@ export const useRaceStore = create<RaceStore>((set) => ({
     });
   },
 
-  startMatchmaking: () => {
-    set({ raceState: "MATCHMAKING" });
+  startLoading: () => {
+    set({ raceState: "LOADING" });
   },
 
   startCountdown: () => {
@@ -251,18 +209,3 @@ export const useRaceStore = create<RaceStore>((set) => ({
     return enterRace(owner, raceId, carTokenId, entryFee);
   },
 }));
-
-// Helper function to generate race positions based on predetermined winner
-function generateRacePositions(participants: RaceParticipant[], winnerId: string): string[] {
-  // Winner is first, then sort others by weight (higher weight = better position)
-  const others = participants
-    .filter((p) => p.car.id !== winnerId)
-    .sort((a, b) => {
-      // Add some randomness to other positions
-      const aScore = a.weight + Math.random() * 0.3;
-      const bScore = b.weight + Math.random() * 0.3;
-      return bScore - aScore;
-    });
-
-  return [winnerId, ...others.map((p) => p.car.id)];
-}

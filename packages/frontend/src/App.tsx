@@ -3,6 +3,7 @@ import type { CarNFT } from "@chain-drift/shared";
 import { buildCarNFT } from "@chain-drift/shared";
 import { getCarManifest } from "./data/collectionManifest";
 import { Garage } from "./components/Garage";
+import { LeaderboardScreen } from "./components/LeaderboardScreen";
 import { LoginPage } from "./components/LoginPage";
 import { OnboardingFlow } from "./components/OnboardingFlow";
 import { RaceScene } from "./components/RaceScene";
@@ -13,14 +14,13 @@ import { Web3Provider } from "./providers/Web3Provider";
 import { useWallet } from "./context/WalletContext";
 import { fetchPlayerCars } from "./services/fetchPlayerCars";
 import type { RaceFinish } from "./services/raceContract";
-import type { OnChainOutcome } from "./stores/raceStore";
-import { aiOpponents } from "./data/mockCars";
 
 type AppView =
   | "garage"
-  | "lobby"         // multiplayer race browser
-  | "waiting"       // waiting room after joining a race
-  | "race";         // 3D race animation
+  | "leaderboard"    // all-time standings
+  | "lobby"          // multiplayer race browser
+  | "waiting"        // waiting room after joining a race
+  | "race";          // 3D replay of the settled race
 
 interface WaitingRoomState {
   raceId: bigint;
@@ -51,7 +51,6 @@ function AppContent() {
     } else {
       setPlayerCars([]);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, wallet?.address]);
 
   useEffect(() => {
@@ -64,17 +63,14 @@ function AppContent() {
     return <OnboardingFlow onComplete={() => setShowOnboarding(false)} />;
   }
 
-  if (state === "disconnected" || state === "error") {
-    return <LoginPage />;
-  }
-
-  if (state === "connecting" || carsLoading) {
+  if (state === "disconnected" || state === "error" || state === "connecting") {
     return <LoginPage />;
   }
 
   const handleStartRace = (carId: string) => {
     const car = playerCars.find((c) => c.id === carId) ?? playerCars[0];
-    setSelectedCarForRace(car ?? null);
+    if (!car) return;
+    setSelectedCarForRace(car);
     setCurrentView("lobby");
   };
 
@@ -95,6 +91,23 @@ function AppContent() {
     setRaceFinish(null);
   };
 
+  // Straight back to the lobby with the same car, skipping the garage.
+  const handleRaceAgain = () => {
+    setWaitingState(null);
+    setRaceFinish(null);
+    setCurrentView(selectedCarForRace ? "lobby" : "garage");
+  };
+
+  // ── Leaderboard ────────────────────────────────────────────────────────
+  if (currentView === "leaderboard") {
+    return (
+      <LeaderboardScreen
+        walletAddress={wallet?.address ?? ""}
+        onClose={handleReturnToGarage}
+      />
+    );
+  }
+
   // ── Lobby ──────────────────────────────────────────────────────────────
   if (currentView === "lobby" && selectedCarForRace) {
     return (
@@ -102,6 +115,7 @@ function AppContent() {
         playerCar={selectedCarForRace}
         walletAddress={wallet?.address ?? ""}
         onJoinedRace={handleJoinedRace}
+        onCancel={handleReturnToGarage}
       />
     );
   }
@@ -119,53 +133,49 @@ function AppContent() {
     );
   }
 
-  // ── 3D Race ────────────────────────────────────────────────────────────
-  if (currentView === "race" && selectedCarForRace) {
-    // Build the car grid from the settled race. `RaceFinished` lists cars in
-    // finish order alongside the DRIFT each was credited; both are handed to
-    // the scene so the animation and the results screen agree with the chain.
-    // Without a settled race this is an exhibition run against AI cars.
-    const raceCars: CarNFT[] = raceFinish
-      ? raceFinish.carTokenIds.map((id, i) => {
-          const tokenId = Number(id);
-          if (tokenId === selectedCarForRace.tokenId) return selectedCarForRace;
-          const manifest = getCarManifest(tokenId);
-          return buildCarNFT(tokenId, raceFinish.players[i], {
-            rarity:     manifest?.rarity,
-            attributes: manifest?.attributes,
-            modelUrl:   manifest?.model,
-            imageUrl:   manifest?.image,
-          });
-        })
-      : [selectedCarForRace, ...aiOpponents.slice(0, 3)];
-
-    const outcome: OnChainOutcome | undefined = raceFinish
-      ? {
-          carTokenIds: raceFinish.carTokenIds.map(Number),
-          payouts: [...raceFinish.payouts],
-        }
-      : undefined;
+  // ── 3D replay of the settled race ──────────────────────────────────────
+  if (currentView === "race" && selectedCarForRace && raceFinish && waitingState) {
+    // `RaceFinished` lists the cars in finish order alongside the DRIFT each
+    // was credited. Both are handed to the scene so the animation and the
+    // results screen agree with the chain.
+    const raceCars: CarNFT[] = raceFinish.carTokenIds.map((id, i) => {
+      const tokenId = Number(id);
+      if (tokenId === selectedCarForRace.tokenId) return selectedCarForRace;
+      const manifest = getCarManifest(tokenId);
+      return buildCarNFT(tokenId, raceFinish.players[i], {
+        rarity:     manifest?.rarity,
+        attributes: manifest?.attributes,
+        modelUrl:   manifest?.model,
+        imageUrl:   manifest?.image,
+      });
+    });
 
     return (
       <RaceScene
         cars={raceCars}
         userCarId={selectedCarForRace.id}
-        outcome={outcome}
+        raceId={waitingState.raceId}
+        entryFee={waitingState.entryFee}
+        outcome={{
+          carTokenIds: raceFinish.carTokenIds.map(Number),
+          payouts: [...raceFinish.payouts],
+        }}
         onReturnToGarage={handleReturnToGarage}
+        onRaceAgain={handleRaceAgain}
       />
     );
   }
 
   // ── Garage ─────────────────────────────────────────────────────────────
   return (
-    <div className="relative">
-      <Garage
-        cars={playerCars}
-        playerId={user?.walletAddress || wallet?.address || "unknown"}
-        onStartRace={handleStartRace}
-        onMintSuccess={() => wallet?.address && loadCars(wallet.address)}
-      />
-    </div>
+    <Garage
+      cars={playerCars}
+      loading={carsLoading}
+      playerId={user?.walletAddress || wallet?.address || "unknown"}
+      onStartRace={handleStartRace}
+      onMintSuccess={() => wallet?.address && loadCars(wallet.address)}
+      onOpenLeaderboard={() => setCurrentView("leaderboard")}
+    />
   );
 }
 

@@ -28,12 +28,14 @@ interface RaceMultiplayerLobbyProps {
   walletAddress: string;
   /** Called after successfully entering a race — passes the race_id */
   onJoinedRace: (raceId: bigint, entryFee: bigint) => void;
+  onCancel: () => void;
 }
 
 export function RaceMultiplayerLobby({
   playerCar,
   walletAddress,
   onJoinedRace,
+  onCancel,
 }: RaceMultiplayerLobbyProps) {
   const [openRaces, setOpenRaces] = useState<OnChainRace[]>([]);
   const [loading, setLoading] = useState(true);
@@ -260,6 +262,26 @@ export function RaceMultiplayerLobby({
         >
           ENTRY FEE LOCKED IN SMART CONTRACT · PAID OUT BY ON-CHAIN VRF
         </div>
+
+        <button
+          onClick={onCancel}
+          disabled={creating || joiningId !== null}
+          style={{
+            width: "100%",
+            marginTop: 16,
+            padding: "12px",
+            background: "transparent",
+            border: `1px solid ${DS.border}`,
+            color: DS.textDisabled,
+            fontFamily: DS.font,
+            fontSize: 8,
+            fontWeight: 700,
+            letterSpacing: "0.2em",
+            cursor: creating || joiningId !== null ? "not-allowed" : "pointer",
+          }}
+        >
+          BACK TO GARAGE
+        </button>
       </div>
     </div>
   );

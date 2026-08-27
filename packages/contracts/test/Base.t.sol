@@ -63,7 +63,7 @@ abstract contract BaseTest is Test {
 
         vm.startPrank(player);
         drift.approve(address(carNft), MINT_FEE);
-        carTokenId = carNft.mint("sport");
+        carTokenId = carNft.mint();
         drift.approve(address(escrow), type(uint256).max);
         vm.stopPrank();
     }

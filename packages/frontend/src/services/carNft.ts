@@ -10,16 +10,6 @@ import { CAR_NFT_ADDRESS, requireAddress } from "../config/chain";
 import { wagmiConfig } from "../config/wagmi";
 import { ensureAllowance } from "./driftToken";
 
-export type CarArchetype = "sport" | "muscle" | "stealth" | "electric" | "street";
-
-export const CAR_ARCHETYPES: CarArchetype[] = [
-  "sport",
-  "muscle",
-  "stealth",
-  "electric",
-  "street",
-];
-
 function carNftAddress(): `0x${string}` {
   return requireAddress(CAR_NFT_ADDRESS, "VITE_CAR_NFT_ADDRESS");
 }
@@ -38,10 +28,15 @@ export async function fetchMintFeeDrift(): Promise<number> {
   return Number(formatEther(await fetchMintFee()));
 }
 
-/** Mint one car. Approves DRIFT first when the allowance is short. */
+/**
+ * Mint one car. Approves DRIFT first when the allowance is short.
+ *
+ * Nothing about the car is chosen here: the token ID the contract hands out
+ * resolves against the collection manifest, which decides the model, the
+ * rarity and the traits.
+ */
 export async function mintCar(
-  owner: `0x${string}`,
-  archetype: CarArchetype
+  owner: `0x${string}`
 ): Promise<{ txHash: `0x${string}`; tokenId: bigint | null }> {
   const address = carNftAddress();
   const fee = await fetchMintFee();
@@ -52,7 +47,6 @@ export async function mintCar(
     address,
     abi: carNftAbi,
     functionName: "mint",
-    args: [archetype],
   });
   const receipt = await waitForTransactionReceipt(wagmiConfig, { hash: txHash });
 

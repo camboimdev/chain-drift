@@ -7,7 +7,7 @@ import {
   Float,
 } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Group, Vector3 } from "three";
 import type { OrbitControls as OrbitControlsType } from "three/examples/jsm/controls/OrbitControls.js";
 import type { CarNFT } from "@chain-drift/shared";
@@ -30,9 +30,12 @@ const DS = {
 
 interface GarageProps {
   cars: CarNFT[];
+  /** True while the on-chain read is in flight — an empty list is not yet news. */
+  loading?: boolean;
   playerId: string;
   onStartRace?: (carId: string) => void;
   onMintSuccess?: () => void;
+  onOpenLeaderboard?: () => void;
 }
 
 // ─── Carousel slot system ────────────────────────────────────────────────────
@@ -381,15 +384,59 @@ const NAV_BTN: React.CSSProperties = {
   transform: "translateY(-50%)",
 };
 
+function GarageLoadingOverlay() {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 20,
+        pointerEvents: "none",
+        fontFamily: DS.font,
+      }}
+    >
+      <div
+        style={{
+          background: DS.bg,
+          border: `1px solid ${DS.border}`,
+          padding: "18px 32px",
+          fontSize: 9,
+          color: DS.textDisabled,
+          letterSpacing: "0.25em",
+        }}
+      >
+        READING GARAGE FROM CHAIN...
+      </div>
+    </div>
+  );
+}
+
 // ─── Garage ──────────────────────────────────────────────────────────────────
 
-export function Garage({ cars: initialCars, playerId, onStartRace, onMintSuccess }: GarageProps) {
-  const [cars] = useState(initialCars);
-  const [selectedCarId, setSelectedCarId] = useState<string | null>(cars[0]?.id ?? null);
+export function Garage({
+  cars,
+  loading = false,
+  playerId,
+  onStartRace,
+  onMintSuccess,
+  onOpenLeaderboard,
+}: GarageProps) {
+  const [selectedCarId, setSelectedCarId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"Gallery" | "Studio">("Gallery");
 
-  const carouselIndex = Math.max(0, cars.findIndex((c) => c.id === selectedCarId));
+  // The list is a prop, not a snapshot: a fresh mint has to show up without a
+  // remount, and the selection has to survive the car it points at going away.
+  const selectedIndex = cars.findIndex((c) => c.id === selectedCarId);
+  const carouselIndex = selectedIndex >= 0 ? selectedIndex : 0;
   const selectedCar   = cars[carouselIndex] ?? null;
+
+  useEffect(() => {
+    if (selectedCarId !== null && selectedIndex >= 0) return;
+    setSelectedCarId(cars[0]?.id ?? null);
+  }, [cars, selectedCarId, selectedIndex]);
 
   // Visible slots state — manages smooth carousel transitions
   const [visibleSlots, setVisibleSlots] = useState<VisibleSlot[]>(() =>
@@ -436,25 +483,28 @@ export function Garage({ cars: initialCars, playerId, onStartRace, onMintSuccess
     return () => clearTimeout(timer);
   }, [carouselIndex, cars]);
 
-  const navigatePrev = () => {
-    if (cars.length <= 1) return;
-    setSelectedCarId(cars[(carouselIndex - 1 + cars.length) % cars.length].id);
-  };
-  const navigateNext = () => {
-    if (cars.length <= 1) return;
-    setSelectedCarId(cars[(carouselIndex + 1) % cars.length].id);
-  };
+  const navigateBy = useCallback(
+    (step: number) => {
+      if (cars.length <= 1) return;
+      const next = (carouselIndex + step + cars.length) % cars.length;
+      setSelectedCarId(cars[next].id);
+    },
+    [cars, carouselIndex]
+  );
+
+  const navigatePrev = () => navigateBy(-1);
+  const navigateNext = () => navigateBy(1);
 
   // Keyboard navigation
   useEffect(() => {
     if (viewMode !== "Gallery") return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "ArrowLeft")  navigatePrev();
-      if (e.key === "ArrowRight") navigateNext();
+      if (e.key === "ArrowLeft")  navigateBy(-1);
+      if (e.key === "ArrowRight") navigateBy(1);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [viewMode, carouselIndex, cars]);
+  }, [viewMode, navigateBy]);
 
   return (
     <div
@@ -487,7 +537,9 @@ export function Garage({ cars: initialCars, playerId, onStartRace, onMintSuccess
 
         <WalletHUD fleetCount={cars.length} onMintSuccess={onMintSuccess} />
 
-        {cars.length === 0 && onMintSuccess && (
+        {loading && <GarageLoadingOverlay />}
+
+        {!loading && cars.length === 0 && onMintSuccess && (
           <GarageEmptyState onMintSuccess={onMintSuccess} />
         )}
 
@@ -517,6 +569,35 @@ export function Garage({ cars: initialCars, playerId, onStartRace, onMintSuccess
                 <div style={{ fontSize: 9, color: DS.textDisabled, letterSpacing: "0.15em", marginTop: 6 }}>
                   {carouselIndex + 1} / {cars.length}
                 </div>
+              )}
+              {onOpenLeaderboard && (
+                <button
+                  onClick={onOpenLeaderboard}
+                  style={{
+                    marginTop: 14,
+                    padding: "8px 16px",
+                    background: "transparent",
+                    border: `1px solid ${DS.border}`,
+                    color: DS.textMeta,
+                    fontFamily: DS.font,
+                    fontSize: 9,
+                    fontWeight: 700,
+                    letterSpacing: "0.2em",
+                    cursor: "pointer",
+                    pointerEvents: "auto",
+                    transition: "border-color 150ms, color 150ms",
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.borderColor = DS.textPrimary;
+                    (e.currentTarget as HTMLButtonElement).style.color = DS.textPrimary;
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.borderColor = DS.border;
+                    (e.currentTarget as HTMLButtonElement).style.color = DS.textMeta;
+                  }}
+                >
+                  LEADERBOARD
+                </button>
               )}
             </div>
 

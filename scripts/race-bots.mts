@@ -61,14 +61,14 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
  * Slot definitions. A bot's identity is its offset from `BOT_INDEX_START`, so
- * slot 0 is always Nitro in a muscle car — recognisable across runs and across
- * redeploys of the contracts.
+ * slot 0 is always Nitro — recognisable across runs and across redeploys of
+ * the contracts. The car itself is whatever the next token ID happens to be.
  */
 const ROSTER = [
-  { name: "Nitro", archetype: "muscle" },
-  { name: "Vortex", archetype: "electric" },
-  { name: "Ghost", archetype: "stealth" },
-  { name: "Blaze", archetype: "sport" },
+  { name: "Nitro" },
+  { name: "Vortex" },
+  { name: "Ghost" },
+  { name: "Blaze" },
 ] as const;
 
 /**
@@ -247,7 +247,6 @@ const deployer = mnemonicToAccount(mnemonic, {
 interface Bot {
   account: HDAccount;
   address: Address;
-  archetype: string;
   index: number;
   name: string;
   /** Filled in by `provision`; the car this bot races. */
@@ -260,7 +259,6 @@ const bots: Bot[] = ROSTER.slice(0, args.bots).map((slot, i) => {
   return {
     account,
     address: account.address,
-    archetype: slot.archetype,
     index,
     name: slot.name,
   };
@@ -455,7 +453,6 @@ async function provision(bot: Bot, mintFee: bigint): Promise<void> {
         address: deployment.carNft,
         abi: carNftAbi,
         functionName: "mint",
-        args: [bot.archetype],
       })
     );
     // The token ID comes out of the receipt's own `CarMinted` log — reading the
@@ -466,7 +463,7 @@ async function provision(bot: Bot, mintFee: bigint): Promise<void> {
       logs: receipt.logs,
     });
     bot.carTokenId = minted?.args.tokenId;
-    console.log(`${label}  minted ${bot.archetype} car #${bot.carTokenId}`);
+    console.log(`${label}  minted car #${bot.carTokenId}`);
   } else {
     bot.carTokenId = cars[0];
   }
@@ -526,7 +523,7 @@ async function printRoster(): Promise<void> {
       readDrift(bot.address),
       readCars(bot.address),
     ]);
-    const car = cars.length > 0 ? `car #${cars[0]} (${bot.archetype})` : "no car";
+    const car = cars.length > 0 ? `car #${cars[0]}` : "no car";
     console.log(
       `  ${bot.name.padEnd(6)} m/44'/60'/0'/0/${String(bot.index).padEnd(4)} ${bot.address}  ` +
         `${Number(formatEther(eth)).toFixed(4)} ETH  ${drift(driftBalance)}  ${car}`

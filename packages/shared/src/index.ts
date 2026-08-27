@@ -1,19 +1,11 @@
 // Types
-export type {
-  CarRarity,
-  PartCategory,
-  PartType,
-  CarPart,
-  CarNFT,
-  PlayerGarage,
-} from "./types/car";
+export type { CarRarity, CarNFT } from "./types/car";
 
 export type {
   RaceState,
   CarStats,
   RaceParticipant,
   RaceResult,
-  RaceBet,
   RaceConfig,
   CameraMode,
   CameraState,
@@ -43,18 +35,14 @@ export { buildCarNFT } from "./data/carGenerator";
 // Race logic
 export {
   calculateCarStats,
-  calculateWinProbabilities,
-  selectWinner,
   calculateTargetProgress,
   calculateSpeedVariation,
   initializeAIBoostState,
   updateAIBoostState,
   calculateLaneDrift,
-  isCornerPosition,
-  generateRaceEvents,
 } from "./utils/raceLogic";
 
-export type { AIBoostState, RaceEvent } from "./utils/raceLogic";
+export type { AIBoostState } from "./utils/raceLogic";
 
 // Economy — prices and prize splits, mirroring the on-chain constants
 export {

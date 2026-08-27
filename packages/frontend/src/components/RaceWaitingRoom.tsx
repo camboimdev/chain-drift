@@ -76,7 +76,7 @@ export function RaceWaitingRoom({
   const [participants, setParticipants] = useState<OnChainParticipant[]>([]);
   const [maxParticipants, setMaxParticipants] = useState(4);
   const [phase, setPhase] = useState<Phase>("waiting");
-  const [error, _setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [dots, setDots] = useState(".");
   const resolveAttempted = useRef(false);
 
@@ -114,6 +114,10 @@ export function RaceWaitingRoom({
         }
       }
 
+      if (status === "Cancelled") {
+        setError("This race was cancelled — your entry fee is claimable from the wallet panel.");
+      }
+
       // The VRF callback lands a few blocks after the request, so the race sits
       // in Resolving until the coordinator answers.
       if (status === "Resolving") {
@@ -133,6 +137,7 @@ export function RaceWaitingRoom({
       }
     } catch (e) {
       console.error("[WaitingRoom] Poll error:", e);
+      setError(e instanceof Error ? e.message : "Lost contact with the escrow contract");
     }
   }, [raceId, onRaceResolved]);
 
@@ -183,7 +188,7 @@ export function RaceWaitingRoom({
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {Array.from({ length: maxParticipants }).map((_, i) => {
             const p = participants[i];
-            const isMe = p?.owner.toLowerCase().includes(walletAddress.slice(4, 16).toLowerCase());
+            const isMe = p?.owner.toLowerCase() === walletAddress.toLowerCase();
 
             return (
               <div
@@ -278,10 +283,27 @@ export function RaceWaitingRoom({
       )}
 
       {phase === "waiting" && (
+        <div
+          style={{
+            marginTop: 20,
+            maxWidth: 480,
+            textAlign: "center",
+            fontSize: 7,
+            color: DS.textDisabled,
+            letterSpacing: "0.14em",
+            lineHeight: 1.8,
+          }}
+        >
+          YOUR ENTRY STAYS IN THE ESCROW EITHER WAY. IF THE GRID NEVER FILLS,
+          THE RACE BECOMES REFUNDABLE ONE HOUR AFTER IT OPENED.
+        </div>
+      )}
+
+      {phase === "waiting" && (
         <button
           onClick={onCancel}
           style={{
-            marginTop: 24,
+            marginTop: 16,
             background: "none",
             border: `1px solid ${DS.border}`,
             color: DS.textDisabled,
@@ -292,7 +314,7 @@ export function RaceWaitingRoom({
             cursor: "pointer",
           }}
         >
-          CANCEL (REFUND AFTER 1H TIMEOUT)
+          LEAVE THIS SCREEN
         </button>
       )}
     </div>

@@ -151,6 +151,10 @@ cp packages/oracle/.env.example packages/oracle/.env
 pnpm --filter @chain-drift/oracle dev
 ```
 
+The recorder watches `RaceFinished` and writes each classification to the
+`Leaderboard` contract. Racing works without it; the game's leaderboard screen
+just stays empty, because nothing else writes those stats.
+
 ### 6. Put opponents on the grid (optional)
 
 ```bash
@@ -161,7 +165,8 @@ An empty lobby cannot be tested. `scripts/race-bots.mts` derives three accounts
 from the same `MNEMONIC` at fixed indices — 100, 101 and 102 — funds them with
 gas and DRIFT, mints each a car, then watches the chain and enters them into any
 open race room. Fixed indices mean the same three drivers in the same three cars
-on every run, so a lobby is recognisable rather than a fresh set of strangers.
+on every run, so a lobby is recognisable rather than a fresh set of strangers —
+the cars themselves are whatever token IDs the mints happen to hand out.
 
 They leave one seat open until a non-bot address has entered, so the room is
 still joinable from the browser, and resolve a full room themselves — printing

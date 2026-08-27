@@ -2,109 +2,58 @@ import type { CarNFT, CarRarity } from "../types/car";
 import type { CarStats, RaceParticipant } from "../types/race";
 
 /**
- * Rarity multipliers for win probability
- * Higher tier = higher chance, but Commons still have a shot (Underdog effect)
+ * How consistent a car looks, by rarity.
+ *
+ * Nothing here decides a race. The finish order comes from Chainlink VRF and is
+ * settled on-chain before the animation starts; these numbers only shape how a
+ * car drives on the way to a result that is already fixed.
  */
-const RARITY_WEIGHTS: Record<CarRarity, number> = {
-  Common: 1.0,
-  Rare: 1.5,
-  Epic: 2.0,
-  Legendary: 3.0,
+const RARITY_RELIABILITY: Record<CarRarity, number> = {
+  Common: 70,
+  Rare: 78,
+  Epic: 85,
+  Legendary: 95,
 };
 
 /**
- * Base stats for cars without specific part stats
+ * Driving profile per collection archetype.
+ *
+ * The archetype is a trait on the token's manifest entry — the same string the
+ * NFT metadata publishes — so two cars of the same archetype handle alike and a
+ * Drift Coupe corners better than a Cyber Muscle in every race it appears in.
  */
-const BASE_STATS: CarStats = {
-  speed: 80,
-  acceleration: 50,
-  handling: 60,
-  reliability: 70,
+const ARCHETYPE_PROFILES: Record<string, Omit<CarStats, "reliability">> = {
+  "Cyber GT":     { speed: 92, acceleration: 70, handling: 78 },
+  "Cyber Muscle": { speed: 95, acceleration: 82, handling: 55 },
+  "Drift Coupe":  { speed: 82, acceleration: 66, handling: 94 },
+  "Retro Tuner":  { speed: 84, acceleration: 74, handling: 74 },
+  "Street Racer": { speed: 86, acceleration: 88, handling: 68 },
 };
 
+/** Used for a token the manifest does not cover — a mint past the pinned set. */
+const DEFAULT_PROFILE: Omit<CarStats, "reliability"> = {
+  speed: 85,
+  acceleration: 72,
+  handling: 72,
+};
+
+function archetypeOf(car: CarNFT): string | undefined {
+  const trait = car.attributes?.find((a) => a.trait_type === "Archetype");
+  return trait === undefined ? undefined : String(trait.value);
+}
+
 /**
- * Calculate a car's racing stats from its equipped parts
+ * A car's driving profile, from the traits the collection actually publishes.
+ *
+ * Cosmetic by design: the animation and the stat bars read this, the payout
+ * never does.
  */
 export function calculateCarStats(car: CarNFT): CarStats {
-  const parts = car.equippedParts;
-  
-  // Extract stats from performance parts
-  const engine = parts.EngineBlock;
-  const nitro = parts.Nitro;
-  const tires = parts.Tires;
-  const suspension = parts.FrontSuspension;
-  
-  // Calculate speed from engine
-  const speed = engine?.stats?.speed ?? BASE_STATS.speed;
-  
-  // Calculate acceleration from engine + nitro bonus
-  const engineAccel = engine?.stats?.acceleration ?? BASE_STATS.acceleration;
-  const nitroBonus = nitro?.stats?.acceleration ?? 0;
-  const acceleration = Math.min(100, engineAccel + nitroBonus);
-  
-  // Handling based on tires/suspension rarity (future: add specific stats)
-  const tiresBonus = tires ? RARITY_WEIGHTS[tires.rarity] * 5 : 0;
-  const suspensionBonus = suspension ? RARITY_WEIGHTS[suspension.rarity] * 5 : 0;
-  const handling = Math.min(100, BASE_STATS.handling + tiresBonus + suspensionBonus);
-  
-  // Reliability based on car rarity (higher tier = more consistent)
-  const reliability = Math.min(100, BASE_STATS.reliability + RARITY_WEIGHTS[car.rarity] * 10);
-  
-  return {
-    speed,
-    acceleration,
-    handling,
-    reliability,
-  };
-}
+  const archetype = archetypeOf(car);
+  const profile =
+    (archetype !== undefined ? ARCHETYPE_PROFILES[archetype] : undefined) ?? DEFAULT_PROFILE;
 
-/**
- * Calculate win probability weights for all participants
- * Uses a combination of stats and rarity for the "weighted random" algorithm
- */
-export function calculateWinProbabilities(participants: RaceParticipant[]): number[] {
-  const weights = participants.map((p) => {
-    const { speed, acceleration, handling, reliability } = p.stats;
-    const rarityMultiplier = RARITY_WEIGHTS[p.car.rarity];
-    
-    // Weighted combination of stats (speed matters most, then handling for this drift game)
-    const statScore = 
-      speed * 0.35 +           // Speed is important
-      acceleration * 0.20 +    // Quick starts help
-      handling * 0.30 +        // Handling for drifting
-      reliability * 0.15;      // Consistency
-    
-    // Apply rarity multiplier and add underdog factor
-    // Even common cars get a base chance
-    const baseChance = 10; // Minimum chance for any car
-    const weight = baseChance + (statScore * rarityMultiplier);
-    
-    return weight;
-  });
-  
-  // Normalize weights to sum to 1
-  const total = weights.reduce((sum, w) => sum + w, 0);
-  return weights.map((w) => w / total);
-}
-
-/**
- * Select a winner using weighted random selection
- * The "brain" of the race - determines outcome before animation starts
- */
-export function selectWinner(participants: RaceParticipant[]): RaceParticipant {
-  const weights = participants.map((p) => p.weight);
-  const random = Math.random();
-  
-  let cumulative = 0;
-  for (let i = 0; i < participants.length; i++) {
-    cumulative += weights[i];
-    if (random <= cumulative) {
-      return participants[i];
-    }
-  }
-  
-  // Fallback (shouldn't happen)
-  return participants[participants.length - 1];
+  return { ...profile, reliability: RARITY_RELIABILITY[car.rarity] };
 }
 
 /**
@@ -298,70 +247,4 @@ export function calculateLaneDrift(
   }
   
   return drift;
-}
-
-/**
- * Determine if a track position is a corner based on curvature
- */
-export function isCornerPosition(progress: number, cornerPositions: number[]): boolean {
-  const tolerance = 0.05; // 5% of track
-  return cornerPositions.some(
-    (corner) => Math.abs(progress - corner) < tolerance
-  );
-}
-
-/**
- * Generate dramatic events during the race
- * These affect visuals but not the predetermined outcome
- */
-export interface RaceEvent {
-  type: "OVERTAKE" | "NEAR_MISS" | "DRIFT" | "BOOST" | "SLIP";
-  carId: string;
-  targetCarId?: string;
-  progress: number;
-  timestamp: number;
-}
-
-export function generateRaceEvents(
-  participants: RaceParticipant[],
-  predeterminedPositions: string[],
-  raceProgress: number
-): RaceEvent[] {
-  const events: RaceEvent[] = [];
-  
-  // Check for position changes that look like overtakes
-  const sortedByProgress = [...participants].sort((a, b) => b.progress - a.progress);
-  
-  sortedByProgress.forEach((car, visualPosition) => {
-    const predeterminedPos = predeterminedPositions.indexOf(car.car.id);
-    
-    // If car is ahead of its "destined" position, it will be overtaken soon
-    if (visualPosition < predeterminedPos && raceProgress < 0.9) {
-      const overtaker = sortedByProgress[visualPosition + 1];
-      if (overtaker && Math.random() > 0.7) {
-        events.push({
-          type: "OVERTAKE",
-          carId: overtaker.car.id,
-          targetCarId: car.car.id,
-          progress: car.progress,
-          timestamp: Date.now(),
-        });
-      }
-    }
-  });
-  
-  // Random drift events at corners
-  if (isCornerPosition(raceProgress, [0.2, 0.4, 0.6, 0.8])) {
-    const randomCar = participants[Math.floor(Math.random() * participants.length)];
-    if (Math.random() > 0.5) {
-      events.push({
-        type: "DRIFT",
-        carId: randomCar.car.id,
-        progress: raceProgress,
-        timestamp: Date.now(),
-      });
-    }
-  }
-  
-  return events;
 }

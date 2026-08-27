@@ -1,165 +1,156 @@
-# Race Visual Polish — Agent Distribution
+# Flow Audit — Strip the First-Version Leftovers
 
-Goal: make the race event presentable. Five agents, disjoint file ownership.
+The game moved from "5 starter cars handed to every player" to "mint one car,
+join a 4-car on-chain race, get paid by VRF". Several screens still describe the
+old game. This pass makes every screen tell the truth about the current one, and
+closes the two gaps the audit found.
 
-## Shared contracts (all agents must honour)
+## Findings
 
-- **Ground plane:** the drivable track surface top is exactly `y = 0`.
-  Floor decals sit at `y <= 0.02`. A car's wheel contact point sits at `y = 0`.
-- **Brand:** `.claude/skills/chain-drift-design/SKILL.md` — monochrome base,
-  at most ONE accent (`#00D1FF`). No cyan+magenta Tron mix.
-- **Car3D API:** `interactive?: boolean` (default `false`) gates hover-scale and
-  the idle showroom wobble. Garage/CarPreview pass it; the race never does.
-- **Preloader API:** `src/services/carModelPreloader.ts` exports
-  `loadCarModel(url)` and
-  `preloadCarModels(tokenIds, onProgress?) => Promise<void>`.
-- **Exhaust API:** `src/components/effects/CarExhaust.tsx` exports
-  `CarExhaustHandle { setState(speedFactor, boosting, boostIntensity) }` and
-  `CarExhaust = forwardRef<CarExhaustHandle, { offset?: [number,number,number] }>`.
-- **Stable exports:** `RaceTrack.tsx` keeps exporting `RaceTrack`,
-  `getTrackPosition`, `getTrackRotation`, `isAtCorner` and the `trackConfig`
-  re-exports.
+### Onboarding — mostly fiction
+- `STARTER FLEET` step promises "5 starter vehicles have been assigned to your
+  garage". Nothing assigns cars; a new wallet lands in an empty garage.
+- Step 1 reads `BALANCE: … CDT` — CDT is the old Klever ticker. The native
+  balance is ETH, the game token is DRIFT.
+- `CHOOSE CALLSIGN` collects a username that is stored nowhere and promises a
+  leaderboard the frontend does not have.
+- `READY` tells the player to "customize parts and configuration" — there is no
+  parts UI.
 
-## Agent A — Asset preload gate
-Owns: `Car3D.tsx`, `services/carModelPreloader.ts` (new), `RaceScene.tsx`
-- [ ] Move the model cache out of Car3D into the preloader service
-- [ ] Real progress-driven loading screen; race cannot start until every
-      participant model is parsed
-- [ ] Add `interactive` prop; stop the showroom wobble leaking into the race
-- [ ] Scene atmosphere: drop the chromatic aberration, retune fog/bloom
+### Mint — the archetype does nothing
+- The selector offers `sport | muscle | stealth | electric | street`. The car you
+  actually receive is the next sequential `tokenId`, resolved against
+  `collectionManifest`, whose archetypes are a different set entirely
+  (`Cyber GT`, `Cyber Muscle`, `Drift Coupe`, `Retro Tuner`, `Street Racer`).
+- `CarNFT.archetypeOf` is written at mint and never read by anything.
+- The whole mint state machine is duplicated between `GarageEmptyState` and
+  `WalletHeader`, already drifted apart.
 
-## Agent B — Track surface
-Owns: `RaceTrack.tsx`, `config/trackConfig.ts`
-- [ ] Replace the Tron grid with asphalt (procedural canvas + normal map)
-- [ ] Lane markings, edge lines, kerbs, barriers, racing line, start grid boxes
-- [ ] Surface top exactly at y=0, no z-fighting
+### Garage
+- `const [cars] = useState(initialCars)` freezes the list at mount: after a mint,
+  `OPEN GARAGE` returns to a garage that is still empty.
+- `USE_MOCK_FALLBACK` defaults to on, so a wallet owning nothing is shown mock
+  tokens 1–5 — literally the "5 starter cars". Racing one reverts on-chain.
+- `carsLoading` renders `LoginPage`, i.e. the login screen to a connected player.
+- Dead files: `CarCard.tsx`, `CameraController.tsx` (Garage has its own).
 
-## Agent C — Car grounding & vehicle feel
-Owns: `RaceDirector.tsx`
-- [ ] Remove the 0.5 float; wheels on the ground
-- [ ] Contact shadow, weight transfer (squat/dive), roll on lateral load
-- [ ] Wire in `CarExhaust`, delete the cone meshes
-- [ ] Fix the shadow-casting light to track the cars
+### Race
+- After the race is already settled on-chain, `RaceScene` shows a *second* race
+  lobby with a randomly generated `RACE_ID`, then a "SCANNING FOR OPPONENTS"
+  matchmaking screen. Both are single-player-era leftovers.
+- That screen hardcodes `ENTRY FEE 1 DRIFT`, `PRIZE POOL 4 DRIFT` and a
+  500/300/150/50 split — the real numbers are 25 / 100 and 50/25/10/5 bps of the
+  gross pool (`economy.ts`), and the waiting room one screen earlier shows them.
+- `BETTING MODULE — PENDING INTEGRATION` stub with no plan behind it.
+- Every car shows identical SPD/ACC/HDL: `calculateCarStats` reads
+  `equippedParts`, which `buildCarNFT` always leaves empty.
+- `RACE AGAIN` on the finish screen is `onClick={() => {}}`.
+- The exhibition/AI path (`aiOpponents`, `selectWinner`, `generateRacePositions`)
+  is unreachable — the race view is only ever entered with a settled outcome.
 
-## Agent D — Camera
-Owns: `RaceCamera.tsx`
-- [ ] Framerate-independent damping; kill the stacked sinusoids
-- [ ] Broadcast grammar: hold a shot, then cut — never swoop continuously
-- [ ] Shake tied to speed, not to `Math.random()` every frame
-
-## Agent E — Thruster / exhaust
-Owns: `components/effects/CarExhaust.tsx` (new)
-- [ ] Layered additive plume, heat haze, flicker; afterburner on boost
-
-## Review
-
-All five workstreams landed. `tsc -b` and `vite build` both clean; the six lint
-errors in RaceTrack.tsx are pre-existing (main had seven).
-
-**Verified in a real browser** (headless SwiftShader cannot create a WebGL2
-context, so verification ran headful against the GPU through puppeteer, driving
-a throwaway preview harness that mounted RaceScene with mock cars — harness
-since removed).
-
-Fixed during integration, on top of the agents' work:
-- Tyre dust rendered as glowing white spheres: `size: 0.85` on a 6 m car plus an
-  opaque-cored texture under additive blending. Now a 0.4 gaussian puff that
-  reads as smoke.
-- The barrier accent strip runs the full circuit and passes within metres of the
-  low camera rigs; at `emissiveIntensity 2.4` with `toneMapped={false}` it
-  bloomed into a neon bar that owned the frame — the exact Tron look the
-  one-accent policy exists to prevent. Now 0.55 and tone mapped.
-- **The asset gate had no ceiling.** Waiting on the models is correct, but on a
-  degraded IPFS day (four gateways timing out in sequence) the player sat on
-  `STREAMING CAR ASSETS [0/4]` for minutes — trading "starts too early" for
-  "may never start". Added `ASSET_DEADLINE_MS = 20000`: the race starts on the
-  models or the deadline, whichever comes first.
-
-Open, not addressed:
-- The race clock read a ~15 minute offset in one sample while ticking at the
-  correct rate; the fresh sample from the same run read correctly. Most likely
-  cross-talk between two overlapping capture runs writing to one directory, but
-  unconfirmed. The countdown effect (`RaceDirector.tsx:908`) is pre-existing and
-  untouched by this work — it stacks an uncancelled `setTimeout` on re-render,
-  which is worth a look regardless.
-- IPFS gateway reliability: `dweb.link`/`w3s.link`/`ipfs.io` intermittently
-  refuse CORS from localhost and Pinata 404s some CIDs. Pre-existing, and the
-  reason the deadline above matters.
-
----
-
-# DRIFT Economy — Exact Payouts and Coherent Pricing
-
-Reported: the DRIFT figures on the results screen are wrong (+500/+300/+150/+50
-on a race whose real pool was 4 DRIFT). Two separate faults, plus a pricing pass.
+### Gaps with no UI at all
+- **Winnings are unclaimable.** `RaceEscrow` credits `pendingWithdrawals` and
+  nothing in the app calls `claim()`. `claimWinnings` /
+  `getPendingWithdrawals` sit unused in the service.
+- **No leaderboard.** The contract and the recorder are live and being written
+  to; the frontend never reads them.
 
 ## Plan
 
-- [x] Trace where the results screen gets its numbers
-- [x] One source of truth for prices and the split, mirroring the contract
-- [x] Contract: rake and split to the chosen structure, fair on short fields
-- [x] Feed the results screen the escrow's own numbers, not a local estimate
-- [x] Price mint / entry / faucet coherently
-- [x] `pnpm contracts:test`, frontend typecheck, frontend build
-- [x] Docs
+### 1. Contract — drop the archetype
+- [x] `CarNFT.mint()` takes no argument; remove `archetypeOf`,
+      `UnknownArchetype`, `_isValidArchetype`; `CarMinted(owner, tokenId)`
+- [x] Update `CarNFT.t.sol`, `Playtest.s.sol`, `scripts/race-bots.mts`
+- [x] `pnpm contracts:build` to re-export the ABIs, `pnpm contracts:test`
 
-## What was actually wrong
+### 2. Mint — one state machine, no archetype
+- [x] `useMintCar()` hook owns fee/balance/state/tx; both surfaces render it
+- [x] Remove `CarArchetype`, `CAR_ARCHETYPES`, both `ARCHETYPES` tables
 
-1. **The numbers were never on-chain.** `raceStore.ts` hardcoded
-   `prizePool: 1000` and `RaceDirector.tsx` split *that* by 50/30/15/5. The
-   escrow's `RaceFinished` event — which carries the exact finish order and the
-   exact payouts — was read by nothing. `waitForRaceFinish` existed and was
-   never called; the waiting room polled `getRaceStatus` and threw the result
-   away.
-2. **The animation disagreed with the chain.** `App.tsx` passed
-   `getParticipants` (entry order) and claimed in a comment it was VRF finish
-   order, while `initializeRace` rolled its own winner with `selectWinner`. The
-   car the player watched win was not the car the contract paid.
-3. **Six-decimal formatter on an 18-decimal token.** `RaceWaitingRoom.tsx`
-   divided by `1e6` — a leftover from the Klever KDA. Every DRIFT figure in the
-   waiting room was off by 10^12.
+### 3. Garage
+- [x] Render the `cars` prop instead of freezing it in state
+- [x] Delete the mock fallback (`mockCars.ts`, `USE_MOCK_FALLBACK`, env var)
+- [x] Loading state inside the garage instead of bouncing to `LoginPage`
+- [x] Delete `CarCard.tsx` and `CameraController.tsx`
 
-## Changes
+### 4. Onboarding — two truthful steps
+- [x] `WALLET CONNECTED` — address, ETH and DRIFT
+- [x] `HOW IT WORKS` — mint → race → claim, with the real numbers
+- [x] Drop the callsign and starter-fleet steps
 
-**`shared/src/utils/economy.ts` (new)** — prices, split constants,
-`calculateRacePayouts`, `formatDrift`. Reproduces `_creditPayouts` including its
-integer truncation, so a pre-race estimate matches the credited amount to the wei.
+### 5. Race
+- [x] `RaceLobby` → `StartingGrid`: real race id, real entry fee, prize table
+      from `calculateRacePayouts`, no betting stub
+- [x] Matchmaking screen tells the truth (settled race + asset preload);
+      `RaceState.MATCHMAKING` → `LOADING`
+- [x] Stats derived from archetype + rarity, labelled as cosmetic
+- [x] Wire `RACE AGAIN`
+- [x] Remove the exhibition path and the race-logic it kept alive
 
-**`RaceEscrow.sol`** — rake 5% → 10%; position shares restated against the gross
-pool (50/25/10/5, summing to 9000 bps with the rake as the residual 1000). Short
-fields renormalise the weights over the places actually filled: previously the
-3rd and 4th shares of a two-car race swept to the fee recipient, quietly turning
-a 5% rake into 25%. Only dust sweeps now.
+### 6. Claim
+- [x] `useWinnings()` — pending balance + `claim()`
+- [x] Pending row and CLAIM in the wallet drawer; CLAIM on the finish screen
 
-**Frontend** — `getRaceFinish` reads the `RaceFinished` log (bounded 500-block
-lookback; the public RPC caps `eth_getLogs` spans). The waiting room hands the
-settled result up; `App` builds the grid from it; the store takes it as the
-authoritative finish order and payout table; `RaceUI` formats wei.
-`RaceResult.payouts[].amount` and `RaceConfig.entryFee` are `bigint` wei now —
-a `number` of DRIFT cannot represent a payout exactly.
+### 7. Leaderboard
+- [x] `services/leaderboard.ts` over `getPlayers` / `getStats`
+- [x] `LeaderboardScreen`, reachable from the garage
 
-**Prices** — mint 1 → 100 DRIFT, entry 1 → 25 DRIFT, faucet 100 → 500 DRIFT.
-Entry 25 makes a full grid stake exactly 100 DRIFT, so every prize is a whole
-number: 50 / 25 / 10 / 5, house 10. Winner doubles, 2nd breaks even. One faucet
-claim buys a car and sixteen entries.
+### 8. Docs
+- [x] README / ARCHITECTURE: no archetype, no mock fallback
+- [x] Review section here
 
 ## Review
 
-- `pnpm contracts:test`: 54 passed. Two new tests — a full grid pays whole
-  multiples of the entry (2×/1×/0.4×/0.2×), and a short field keeps the rake at
-  exactly 10% instead of inflating it.
-- Value conservation verified for fields of 1–4 and for an indivisible entry fee
-  (`333333333333333333` wei): payouts + fee == pool in every case.
-- Frontend typecheck and `vite build` clean.
-- `forge fmt` still reports the six files it reported before this change; no new
-  violations.
+Every box above is done. `forge test` is green (53 passed, 0 failed), `tsc -b
+--force` is clean across shared and frontend, `vite build` succeeds, and the app
+was loaded in a real browser: it boots with no console errors.
 
-## Open
+### What the contract change costs
 
-- The exhibition run (no on-chain race, AI opponents) shows the payouts a real
-  race of that size would carry, but pays nothing. It is a demo path — worth a
-  visual marker on the results screen so the figures cannot be mistaken for
-  winnings.
-- The contract is not redeployed. The new rake, split and mint fee only take
-  effect after `pnpm contracts:deploy`; the entry fee is per-race and applies to
-  rooms created after the frontend ships.
+`CarNFT.mint()` lost its argument, so **the deployed CarNFT at
+`0x7beaa7d4…` is now incompatible with this frontend**. Reads still work — the
+bots script listed its roster and their cars against the live chain during
+verification — but any mint reverts until the contract is redeployed and
+`pnpm sync-env` has rewritten the addresses. `mintWithPermit` lost the same
+argument, and `CarMinted` is now `(owner, tokenId)`.
+
+### Extra findings fixed on the way
+
+- The login page's middle feature card sold a "Modular parts system. Infinite
+  configurations" that no screen implements. Replaced with what the game does
+  do: four-car grids in escrow, and VRF-settled payouts.
+- The lobby had no way back to the garage — entering it committed the player to
+  creating or joining a race. Added a BACK TO GARAGE button.
+- The waiting room's `isMe` compared `p.owner` against a *substring* of the
+  connected address (`walletAddress.slice(4, 16)`), so the YOU marker could land
+  on the wrong row. Now a plain lowercase address comparison.
+- Its `error` state existed but was never set — the setter was named `_setError`
+  to silence the unused warning. It now reports a poll failure and a race that
+  was cancelled underneath the player.
+
+### Judgement calls worth knowing about
+
+- **Car stats are cosmetic, and now say so.** `calculateCarStats` used to read
+  `equippedParts`, which `buildCarNFT` always left empty, so every car on the
+  grid showed identical SPD/ACC/HDL. They now come from the car's real manifest
+  archetype (`Cyber GT`, `Cyber Muscle`, `Drift Coupe`, `Retro Tuner`,
+  `Street Racer`) plus a rarity-based reliability. Nothing about them touches a
+  payout — the finish order is VRF's — and the comments in `raceLogic.ts` say
+  that outright so the next reader does not mistake it for pay-to-win.
+- **The exhibition path is gone, not disabled.** `RaceScene` now requires an
+  `outcome`, and `initializeRace` no longer takes one optionally. The race view
+  was already unreachable without a settled `RaceFinished`, so the simulated
+  outcome, `selectWinner`, `calculateWinProbabilities` and the `weight` field
+  were dead weight keeping a whole second code path alive.
+- **The parts type scaffolding went with it.** `CarPart`, `PartType`,
+  `PartCategory` and `PlayerGarage` modelled a parts system the chain does not
+  have — `CarNFT.getEquippedParts` returns free-form `(slot, partId)` strings.
+  The contract's parts functions and their service wrappers are untouched; only
+  the fictional client-side types are gone.
+
+## Not in this pass
+- **Stuck-race refund.** The waiting room's `CANCEL (REFUND AFTER 1H TIMEOUT)`
+  never calls `cancelRace` — it only navigates back. Its `error` state is never
+  set, and `isMe` compares a substring of the address instead of the address.
+  The button text is being corrected so it stops promising a refund it does not
+  perform; wiring the real refund is deferred.

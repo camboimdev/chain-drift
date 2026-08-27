@@ -55,15 +55,17 @@ mainnet deployment.**
 
 ### CarNFT — ERC-721
 
-`ERC721Enumerable`, token IDs from 1 upward. The 3D car is derived client-side
-from `generateCar(tokenId)`, so the contract stores only what the chain must own:
+`ERC721Enumerable`, token IDs from 1 upward. The car is resolved client-side by
+token ID against the collection manifest — model, rarity and traits all travel
+with the ID — so the contract stores only what the chain must own:
 
-- `archetypeOf[tokenId]` — the archetype chosen at mint
 - equipped parts per slot, plus `getEquippedParts(tokenId)` returning the whole
   loadout in one call
 - `tokensOfOwner(address)` for the garage
 
-Minting charges `mintFee` in DRIFT, forwarded to `feeRecipient`.
+`mint()` takes no arguments: nothing about the car is chosen by the caller, and
+the next sequential ID decides which one it is. Minting charges `mintFee` in
+DRIFT, forwarded to `feeRecipient`.
 
 ### RaceEscrow
 
@@ -171,6 +173,9 @@ log replays safe. Switching to a direct call later is a one-line change plus a
 | `services/driftToken.ts` | Balances, allowances, faucet |
 | `services/carNft.ts` | Mint, garage reads, parts |
 | `services/raceContract.ts` | Race rooms, entry, resolve, claim |
+| `services/leaderboard.ts` | All-time standings |
+| `hooks/useMintCar.ts` | Mint state machine, shared by both mint surfaces |
+| `hooks/useWinnings.ts` | Pending withdrawals and `claim()` |
 
 Everything above this layer — the 3D scene, the garage, the race director — is
 chain-agnostic and was carried over unchanged.

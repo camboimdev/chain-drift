@@ -47,25 +47,6 @@ export const carNftAbi = [
   },
   {
     "type": "function",
-    "name": "archetypeOf",
-    "inputs": [
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "archetype",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "balanceOf",
     "inputs": [
       {
@@ -213,13 +194,7 @@ export const carNftAbi = [
   {
     "type": "function",
     "name": "mint",
-    "inputs": [
-      {
-        "name": "archetype",
-        "type": "string",
-        "internalType": "string"
-      }
-    ],
+    "inputs": [],
     "outputs": [
       {
         "name": "tokenId",
@@ -246,11 +221,6 @@ export const carNftAbi = [
     "type": "function",
     "name": "mintWithPermit",
     "inputs": [
-      {
-        "name": "archetype",
-        "type": "string",
-        "internalType": "string"
-      },
       {
         "name": "deadline",
         "type": "uint256",
@@ -725,12 +695,6 @@ export const carNftAbi = [
         "type": "uint256",
         "indexed": true,
         "internalType": "uint256"
-      },
-      {
-        "name": "archetype",
-        "type": "string",
-        "indexed": false,
-        "internalType": "string"
       }
     ],
     "anonymous": false
@@ -1033,17 +997,6 @@ export const carNftAbi = [
       },
       {
         "name": "slot",
-        "type": "string",
-        "internalType": "string"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "UnknownArchetype",
-    "inputs": [
-      {
-        "name": "archetype",
         "type": "string",
         "internalType": "string"
       }

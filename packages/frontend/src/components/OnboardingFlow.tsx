@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { formatDrift, RACE_ENTRY_FEE, MAX_PARTICIPANTS } from "@chain-drift/shared";
 import { useWallet } from "../context/WalletContext";
+import { fetchMintFeeDrift } from "../services/carNft";
 
 const DS = {
   bg: "#000000",
@@ -16,267 +18,169 @@ interface OnboardingFlowProps {
   onComplete: () => void;
 }
 
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "baseline",
+        gap: 16,
+        padding: "9px 0",
+        borderBottom: `1px solid ${DS.divider}`,
+      }}
+    >
+      <span style={{ fontSize: 8, color: DS.textDisabled, letterSpacing: "0.2em", flexShrink: 0 }}>
+        {label}
+      </span>
+      <span
+        style={{
+          fontSize: 10,
+          color: DS.textPrimary,
+          letterSpacing: "0.04em",
+          textAlign: "right",
+          wordBreak: "break-all",
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function Step({
+  index,
+  title,
+  body,
+}: {
+  index: number;
+  title: string;
+  body: string;
+}) {
+  return (
+    <div style={{ display: "flex", gap: 14, alignItems: "flex-start", marginBottom: 16 }}>
+      <span
+        style={{
+          fontSize: 9,
+          color: DS.textDisabled,
+          letterSpacing: "0.1em",
+          flexShrink: 0,
+          marginTop: 2,
+        }}
+      >
+        {String(index).padStart(2, "0")}
+      </span>
+      <div>
+        <div
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            color: DS.textPrimary,
+            letterSpacing: "0.14em",
+            marginBottom: 4,
+          }}
+        >
+          {title}
+        </div>
+        <div style={{ fontSize: 10, color: DS.textMeta, letterSpacing: "0.04em", lineHeight: 1.6 }}>
+          {body}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const { wallet, completeOnboarding } = useWallet();
   const [currentStep, setCurrentStep] = useState(0);
-  const [username, setUsername] = useState("");
+  const [mintFee, setMintFee] = useState<number | null>(null);
+
+  // Owner-settable on the contract, so the price the player is quoted here has
+  // to be the one they will actually be charged.
+  useEffect(() => {
+    fetchMintFeeDrift()
+      .then(setMintFee)
+      .catch(() => setMintFee(null));
+  }, []);
+
+  const mintFeeLabel = mintFee === null ? "—" : `${mintFee} DRIFT`;
+  const entryFeeLabel = `${formatDrift(RACE_ENTRY_FEE)} DRIFT`;
 
   const steps = [
     {
       title: "WALLET CONNECTED",
       content: (
-        <div style={{ textAlign: "center" }}>
+        <div>
           <div
             style={{
               fontSize: 11,
               color: DS.textMeta,
-              letterSpacing: "0.08em",
+              letterSpacing: "0.06em",
               lineHeight: 1.7,
               marginBottom: 24,
-            }}
-          >
-            Your wallet has been authenticated.
-            <br />
-            You are now entering Chain Drift.
-          </div>
-          <div
-            style={{
-              padding: "16px",
-              border: `1px solid ${DS.border}`,
-              background: DS.surface,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 9,
-                color: DS.textDisabled,
-                letterSpacing: "0.2em",
-                marginBottom: 8,
-              }}
-            >
-              ADDRESS
-            </div>
-            <div
-              style={{
-                fontSize: 11,
-                color: DS.textPrimary,
-                wordBreak: "break-all",
-              }}
-            >
-              {wallet?.address}
-            </div>
-            <div
-              style={{
-                marginTop: 12,
-                paddingTop: 12,
-                borderTop: `1px solid ${DS.divider}`,
-                fontSize: 10,
-                color: DS.textMeta,
-              }}
-            >
-              BALANCE: {wallet?.balance?.toFixed(2) ?? "—"} CDT
-            </div>
-          </div>
-        </div>
-      ),
-    },
-    {
-      title: "CHOOSE CALLSIGN",
-      content: (
-        <div style={{ textAlign: "center" }}>
-          <div
-            style={{
-              fontSize: 11,
-              color: DS.textMeta,
-              letterSpacing: "0.08em",
-              marginBottom: 24,
-              lineHeight: 1.7,
-            }}
-          >
-            Set your driver callsign.
-            <br />
-            This will identify you on the leaderboard.
-          </div>
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="ENTER CALLSIGN"
-            maxLength={20}
-            style={{
-              width: "100%",
-              maxWidth: 360,
-              padding: "14px 16px",
-              background: DS.surface,
-              border: `1px solid ${DS.border}`,
-              color: DS.textPrimary,
-              fontFamily: DS.font,
-              fontSize: 13,
-              fontWeight: 700,
-              letterSpacing: "0.15em",
               textAlign: "center",
-              outline: "none",
-            }}
-            onFocus={(e) => {
-              (e.currentTarget as HTMLInputElement).style.borderColor = DS.textPrimary;
-            }}
-            onBlur={(e) => {
-              (e.currentTarget as HTMLInputElement).style.borderColor = DS.border;
-            }}
-          />
-          <div
-            style={{
-              marginTop: 8,
-              fontSize: 9,
-              color: DS.textDisabled,
-              letterSpacing: "0.15em",
             }}
           >
-            {username.length}/20
-          </div>
-        </div>
-      ),
-    },
-    {
-      title: "STARTER FLEET",
-      content: (
-        <div style={{ textAlign: "center" }}>
-          <div
-            style={{
-              fontSize: 11,
-              color: DS.textMeta,
-              letterSpacing: "0.08em",
-              lineHeight: 1.7,
-              marginBottom: 24,
-            }}
-          >
-            5 starter vehicles have been assigned to your garage.
+            Your wallet is authenticated on {wallet?.network ?? "the game chain"}.
             <br />
-            Each has unique on-chain attributes.
+            Everything below happens on-chain from here.
           </div>
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(5, 1fr)",
-              gap: 8,
-              marginBottom: 20,
+              padding: "4px 16px 12px",
+              border: `1px solid ${DS.border}`,
+              background: DS.surface,
             }}
           >
-            {["01", "02", "03", "04", "05"].map((id) => (
-              <div
-                key={id}
-                style={{
-                  padding: "20px 0",
-                  border: `1px solid ${DS.border}`,
-                  background: DS.surface,
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: 6,
-                }}
-              >
-                <div
-                  style={{
-                    width: 20,
-                    height: 10,
-                    background: DS.textDisabled,
-                  }}
-                />
-                <div
-                  style={{
-                    fontSize: 8,
-                    color: DS.textDisabled,
-                    letterSpacing: "0.15em",
-                  }}
-                >
-                  CAR {id}
-                </div>
-              </div>
-            ))}
+            <Field label="ADDRESS" value={wallet?.address ?? "—"} />
+            <Field
+              label="GAS"
+              value={wallet ? `${(wallet.balance ?? 0).toFixed(4)} ETH` : "—"}
+            />
+            <Field
+              label="DRIFT"
+              value={wallet ? `${(wallet.driftBalance ?? 0).toFixed(2)} DRIFT` : "—"}
+            />
           </div>
           <div
             style={{
-              fontSize: 10,
+              marginTop: 12,
+              fontSize: 9,
               color: DS.textDisabled,
               letterSpacing: "0.08em",
               lineHeight: 1.6,
+              textAlign: "center",
             }}
           >
-            Customize and race your vehicles from the garage.
+            DRIFT pays for cars and race entries. ETH pays the gas.
           </div>
         </div>
       ),
     },
     {
-      title: "READY",
+      title: "HOW IT WORKS",
       content: (
-        <div style={{ textAlign: "center" }}>
-          <div
-            style={{
-              fontSize: 11,
-              color: DS.textMeta,
-              letterSpacing: "0.08em",
-              lineHeight: 1.7,
-              marginBottom: 24,
-            }}
-          >
-            Your garage is initialized and ready.
-          </div>
-          <div
-            style={{
-              border: `1px solid ${DS.border}`,
-              padding: "20px",
-              textAlign: "left",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 9,
-                color: DS.textDisabled,
-                letterSpacing: "0.2em",
-                marginBottom: 12,
-              }}
-            >
-              NEXT STEPS
-            </div>
-            {[
-              "Select a vehicle from your garage",
-              "Customize parts and configuration",
-              "Enter a race — outcomes settled on-chain",
-            ].map((item, i) => (
-              <div
-                key={i}
-                style={{
-                  display: "flex",
-                  gap: 12,
-                  marginBottom: 10,
-                  alignItems: "flex-start",
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: 9,
-                    color: DS.textDisabled,
-                    letterSpacing: "0.1em",
-                    flexShrink: 0,
-                    marginTop: 1,
-                  }}
-                >
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <span
-                  style={{
-                    fontSize: 10,
-                    color: DS.textMeta,
-                    lineHeight: 1.5,
-                    letterSpacing: "0.05em",
-                  }}
-                >
-                  {item}
-                </span>
-              </div>
-            ))}
-          </div>
+        <div>
+          <Step
+            index={1}
+            title={`MINT A CAR · ${mintFeeLabel}`}
+            body="Your garage starts empty. Minting draws the next car in the Chain Drift collection — its model, rarity and traits come with the token."
+          />
+          <Step
+            index={2}
+            title={`ENTER A RACE · ${entryFeeLabel}`}
+            body={`Open a room or join one. The grid locks at ${MAX_PARTICIPANTS} cars and the entry fees sit in the escrow contract until it settles.`}
+          />
+          <Step
+            index={3}
+            title="CHAINLINK VRF DECIDES"
+            body="The finish order is drawn on-chain. Nothing in the browser can influence it — the animation replays a result that is already settled."
+          />
+          <Step
+            index={4}
+            title="CLAIM YOUR WINNINGS"
+            body="Payouts are credited to your address, not transferred. Claim them from the wallet panel whenever you like."
+          />
         </div>
       ),
     },
@@ -290,8 +194,6 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       onComplete();
     }
   };
-
-  const canProceed = currentStep !== 1 || username.trim().length > 0;
 
   return (
     <div
@@ -308,39 +210,15 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       <div style={{ width: "100%", maxWidth: 560 }}>
         {/* Progress bar */}
         <div style={{ marginBottom: 32 }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              marginBottom: 8,
-            }}
-          >
-            <span
-              style={{
-                fontSize: 9,
-                color: DS.textDisabled,
-                letterSpacing: "0.2em",
-              }}
-            >
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+            <span style={{ fontSize: 9, color: DS.textDisabled, letterSpacing: "0.2em" }}>
               SETUP
             </span>
-            <span
-              style={{
-                fontSize: 9,
-                color: DS.textDisabled,
-                letterSpacing: "0.1em",
-              }}
-            >
+            <span style={{ fontSize: 9, color: DS.textDisabled, letterSpacing: "0.1em" }}>
               {currentStep + 1}/{steps.length}
             </span>
           </div>
-          <div
-            style={{
-              width: "100%",
-              height: 2,
-              background: DS.divider,
-            }}
-          >
+          <div style={{ width: "100%", height: 2, background: DS.divider }}>
             <div
               style={{
                 width: `${((currentStep + 1) / steps.length) * 100}%`,
@@ -353,13 +231,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
         </div>
 
         {/* Step card */}
-        <div
-          style={{
-            background: DS.surface,
-            border: `1px solid ${DS.border}`,
-            padding: "40px",
-          }}
-        >
+        <div style={{ background: DS.surface, border: `1px solid ${DS.border}`, padding: "40px" }}>
           <div
             style={{
               fontSize: 16,
@@ -376,13 +248,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
           <div style={{ marginBottom: 40 }}>{steps[currentStep].content}</div>
 
           {/* Navigation */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <button
               onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
               disabled={currentStep === 0}
@@ -419,30 +285,25 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
             <button
               onClick={nextStep}
-              disabled={!canProceed}
               style={{
                 padding: "10px 24px",
-                background: canProceed ? "transparent" : "transparent",
-                border: `1px solid ${canProceed ? DS.textPrimary : DS.textDisabled}`,
-                color: canProceed ? DS.textPrimary : DS.textDisabled,
+                background: "transparent",
+                border: `1px solid ${DS.textPrimary}`,
+                color: DS.textPrimary,
                 fontFamily: DS.font,
                 fontSize: 9,
                 fontWeight: 700,
                 letterSpacing: "0.2em",
-                cursor: canProceed ? "pointer" : "not-allowed",
+                cursor: "pointer",
                 transition: "background 150ms, color 150ms",
               }}
               onMouseEnter={(e) => {
-                if (canProceed) {
-                  (e.currentTarget as HTMLButtonElement).style.background = DS.textPrimary;
-                  (e.currentTarget as HTMLButtonElement).style.color = DS.bg;
-                }
+                (e.currentTarget as HTMLButtonElement).style.background = DS.textPrimary;
+                (e.currentTarget as HTMLButtonElement).style.color = DS.bg;
               }}
               onMouseLeave={(e) => {
-                if (canProceed) {
-                  (e.currentTarget as HTMLButtonElement).style.background = "transparent";
-                  (e.currentTarget as HTMLButtonElement).style.color = DS.textPrimary;
-                }
+                (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+                (e.currentTarget as HTMLButtonElement).style.color = DS.textPrimary;
               }}
             >
               {currentStep === steps.length - 1 ? "ENTER GARAGE" : "NEXT"}

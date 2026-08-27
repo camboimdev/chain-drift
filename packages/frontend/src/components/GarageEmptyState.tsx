@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { useWallet } from "../context/WalletContext";
-import { mintCar, fetchMintFeeDrift, type CarArchetype } from "../services/carNft";
+import { useMintCar } from "../hooks/useMintCar";
 
 const DS = {
   bg:          "#000000",
@@ -14,16 +13,6 @@ const DS = {
   danger:      "#FF4040",
   font:        "'JetBrains Mono', monospace",
 };
-
-const ARCHETYPES: { id: CarArchetype; label: string; desc: string }[] = [
-  { id: "sport",    label: "SPORT",    desc: "High downforce · Track-tuned" },
-  { id: "muscle",   label: "MUSCLE",   desc: "Raw torque · Drag-built"      },
-  { id: "stealth",  label: "STEALTH",  desc: "Low drag · Ghost profile"     },
-  { id: "electric", label: "ELECTRIC", desc: "Instant torque · Grid-native" },
-  { id: "street",   label: "STREET",   desc: "Balanced · Road-ready"        },
-];
-
-type MintState = "idle" | "minting" | "success" | "error";
 
 interface GarageEmptyStateProps {
   onMintSuccess: () => void;
@@ -115,44 +104,15 @@ function CarSilhouette() {
 }
 
 export function GarageEmptyState({ onMintSuccess }: GarageEmptyStateProps) {
-  const { wallet } = useWallet();
-  const [driftBal, setDriftBal]       = useState<number | null>(null);
-  const [mintFee, setMintFee]         = useState<number>(0);
-  const [archetype, setArchetype]     = useState<CarArchetype>("sport");
-  const [mintState, setMintState]     = useState<MintState>("idle");
-  const [txHash, setTxHash]           = useState<string>("");
-  const [errorMsg, setErrorMsg]       = useState<string>("");
-
-  // The fee is an owner-settable value on the contract, not a constant.
-  useEffect(() => {
-    fetchMintFeeDrift().then(setMintFee).catch(() => setMintFee(0));
-  }, []);
-
-  useEffect(() => {
-    if (!wallet?.address) return;
-    setDriftBal(wallet.driftBalance ?? 0);
-  }, [wallet?.address, wallet?.driftBalance]);
-
-  const hasSufficientBalance = driftBal !== null && mintFee > 0 && driftBal >= mintFee;
-
-  const handleMint = async () => {
-    if (mintState === "minting") return;
-    setMintState("minting");
-    setErrorMsg("");
-    try {
-      if (!wallet?.address) throw new Error("Wallet not connected");
-      const result = await mintCar(wallet.address, archetype);
-      setTxHash(result.txHash);
-      setMintState("success");
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Transaction failed");
-      setMintState("error");
-    }
-  };
-
-  const handleRefresh = () => {
-    onMintSuccess();
-  };
+  const {
+    mintFee,
+    driftBalance,
+    canAfford,
+    state: mintState,
+    txHash,
+    error: errorMsg,
+    mint,
+  } = useMintCar();
 
   return (
     <div
@@ -218,67 +178,29 @@ export function GarageEmptyState({ onMintSuccess }: GarageEmptyStateProps) {
 
         <div style={{ borderTop: `1px solid ${DS.divider}`, margin: "0 20px" }} />
 
-        {/* ── Archetype selector ── */}
+        {/* ── What a mint gives you ── */}
         {mintState !== "success" && (
           <div style={{ padding: "20px 20px 0" }}>
             <div
               style={{
-                fontSize:     8,
-                color:        DS.textDisabled,
-                letterSpacing:"0.22em",
-                marginBottom: 10,
+                fontSize:      8,
+                color:         DS.textDisabled,
+                letterSpacing: "0.22em",
+                marginBottom:  10,
               }}
             >
-              SELECT ARCHETYPE
+              NEXT IN COLLECTION
             </div>
-
-            <div style={{ display: "flex", gap: 6 }}>
-              {ARCHETYPES.map(({ id, label }) => {
-                const active = archetype === id;
-                const disabled = mintState === "minting";
-                return (
-                  <button
-                    key={id}
-                    onClick={() => !disabled && setArchetype(id)}
-                    style={{
-                      flex:          1,
-                      padding:       "10px 0",
-                      background:    active ? DS.textPrimary : "transparent",
-                      border:        `1px solid ${active ? DS.textPrimary : DS.border}`,
-                      color:         active ? DS.bg : DS.textDisabled,
-                      fontFamily:    DS.font,
-                      fontSize:      8,
-                      fontWeight:    700,
-                      letterSpacing: "0.14em",
-                      cursor:        disabled ? "not-allowed" : "pointer",
-                      transition:    "background 150ms, color 150ms, border-color 150ms",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!active && !disabled)
-                        (e.currentTarget as HTMLButtonElement).style.borderColor = DS.textMeta;
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!active && !disabled)
-                        (e.currentTarget as HTMLButtonElement).style.borderColor = DS.border;
-                    }}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Archetype description */}
             <div
               style={{
-                marginTop:    8,
-                fontSize:     8,
-                color:        DS.textDisabled,
-                letterSpacing:"0.1em",
-                minHeight:    14,
+                fontSize:      8,
+                color:         DS.textMeta,
+                letterSpacing: "0.1em",
+                lineHeight:    1.8,
               }}
             >
-              {ARCHETYPES.find((a) => a.id === archetype)?.desc ?? ""}
+              The token ID you receive decides the car. Model, rarity and traits
+              are fixed by the collection — nothing here is chosen for you to pick.
             </div>
           </div>
         )}
@@ -311,14 +233,14 @@ export function GarageEmptyState({ onMintSuccess }: GarageEmptyStateProps) {
                 style={{
                   fontSize:   14,
                   fontWeight: 700,
-                  color:      driftBal === null
+                  color:      driftBalance === null
                     ? DS.textDisabled
-                    : hasSufficientBalance
+                    : canAfford
                     ? DS.textPrimary
                     : DS.danger,
                 }}
               >
-                {driftBal === null ? "—" : `${driftBal.toFixed(2)} DRIFT`}
+                {driftBalance === null ? "—" : `${driftBalance.toFixed(2)} DRIFT`}
               </div>
             </div>
           </div>
@@ -381,7 +303,7 @@ export function GarageEmptyState({ onMintSuccess }: GarageEmptyStateProps) {
         <div style={{ padding: "0 20px 20px" }}>
           {mintState === "success" ? (
             <button
-              onClick={handleRefresh}
+              onClick={onMintSuccess}
               style={{
                 width:         "100%",
                 padding:       "14px",
@@ -418,35 +340,35 @@ export function GarageEmptyState({ onMintSuccess }: GarageEmptyStateProps) {
             </div>
           ) : (
             <button
-              onClick={hasSufficientBalance ? handleMint : undefined}
-              disabled={!hasSufficientBalance}
+              onClick={canAfford ? mint : undefined}
+              disabled={!canAfford}
               style={{
                 width:         "100%",
                 padding:       "14px",
                 background:    "transparent",
-                border:        `1px solid ${hasSufficientBalance ? DS.textPrimary : DS.border}`,
-                color:         hasSufficientBalance ? DS.textPrimary : DS.textDisabled,
+                border:        `1px solid ${canAfford ? DS.textPrimary : DS.border}`,
+                color:         canAfford ? DS.textPrimary : DS.textDisabled,
                 fontFamily:    DS.font,
                 fontSize:      10,
                 fontWeight:    700,
                 letterSpacing: "0.2em",
-                cursor:        hasSufficientBalance ? "pointer" : "not-allowed",
+                cursor:        canAfford ? "pointer" : "not-allowed",
                 transition:    "background 150ms, color 150ms",
               }}
               onMouseEnter={(e) => {
-                if (hasSufficientBalance) {
+                if (canAfford) {
                   (e.currentTarget as HTMLButtonElement).style.background = DS.textPrimary;
                   (e.currentTarget as HTMLButtonElement).style.color = DS.bg;
                 }
               }}
               onMouseLeave={(e) => {
-                if (hasSufficientBalance) {
+                if (canAfford) {
                   (e.currentTarget as HTMLButtonElement).style.background = "transparent";
                   (e.currentTarget as HTMLButtonElement).style.color = DS.textPrimary;
                 }
               }}
             >
-              {hasSufficientBalance
+              {canAfford
                 ? "MINT FIRST VEHICLE"
                 : "INSUFFICIENT DRIFT BALANCE"}
             </button>

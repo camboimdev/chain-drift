@@ -13,9 +13,9 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /// @title CarNFT — Chain Drift car collection
 /// @notice ERC-721 replacement for the Klever KDA collection `CAR-2JT4`.
-///         The 3D car is derived client-side from `tokenId` via
-///         `generateCar(tokenId)`, so the contract only needs to track
-///         ownership, the archetype chosen at mint, and equipped upgrade parts.
+///         The 3D car is resolved client-side from `tokenId` against the
+///         collection manifest, so the contract only needs to track ownership
+///         and equipped upgrade parts.
 /// @dev Token IDs start at 1 and increase monotonically, matching the Klever
 ///      nonce semantics the renderer and metadata pipeline already assume.
 contract CarNFT is ERC721Enumerable, Ownable {
@@ -36,20 +36,16 @@ contract CarNFT is ERC721Enumerable, Ownable {
 
     uint256 private _nextTokenId = 1;
 
-    /// @notice Archetype chosen at mint: "sport" | "muscle" | "stealth" | "electric" | "street".
-    mapping(uint256 tokenId => string archetype) public archetypeOf;
-
     /// Equipped parts, keyed by `keccak256(slot)` so slots stay free-form strings.
     mapping(uint256 tokenId => mapping(bytes32 slotHash => string partId)) private _equipped;
     mapping(uint256 tokenId => EnumerableSet.Bytes32Set slotHashes) private _filledSlots;
     mapping(bytes32 slotHash => string slot) private _slotName;
 
     error NotCarOwner(uint256 tokenId, address caller);
-    error UnknownArchetype(string archetype);
     error SlotEmpty(uint256 tokenId, string slot);
     error ZeroAddress();
 
-    event CarMinted(address indexed owner, uint256 indexed tokenId, string archetype);
+    event CarMinted(address indexed owner, uint256 indexed tokenId);
     event PartEquipped(uint256 indexed tokenId, string slot, string partId);
     event PartUnequipped(uint256 indexed tokenId, string slot);
     event MintFeeSet(uint256 newFee);
@@ -74,42 +70,35 @@ contract CarNFT is ERC721Enumerable, Ownable {
     // ─── Minting ────────────────────────────────────────────────────────────
 
     /// @notice Mint one car. Caller must have approved `mintFee` DRIFT first.
-    /// @param archetype One of "sport", "muscle", "stealth", "electric", "street".
     /// @return tokenId The freshly minted token ID.
-    function mint(string calldata archetype) external returns (uint256 tokenId) {
-        return _mintCar(msg.sender, archetype);
+    function mint() external returns (uint256 tokenId) {
+        return _mintCar(msg.sender);
     }
 
     /// @notice Mint one car, taking the DRIFT allowance from an EIP-2612 signature
     ///         so the player only signs and sends a single transaction.
-    function mintWithPermit(
-        string calldata archetype,
-        uint256 deadline,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) external returns (uint256 tokenId) {
+    function mintWithPermit(uint256 deadline, uint8 v, bytes32 r, bytes32 s)
+        external
+        returns (uint256 tokenId)
+    {
         // A front-run of the permit would make this call revert while leaving the
         // allowance in place, so ignore the failure and let the transfer decide.
         try IERC20Permit(address(paymentToken)).permit(
             msg.sender, address(this), mintFee, deadline, v, r, s
         ) {} catch {}
-        return _mintCar(msg.sender, archetype);
+        return _mintCar(msg.sender);
     }
 
-    function _mintCar(address to, string calldata archetype) private returns (uint256 tokenId) {
-        if (!_isValidArchetype(archetype)) revert UnknownArchetype(archetype);
-
+    function _mintCar(address to) private returns (uint256 tokenId) {
         uint256 fee = mintFee;
         if (fee > 0) {
             paymentToken.safeTransferFrom(to, feeRecipient, fee);
         }
 
         tokenId = _nextTokenId++;
-        archetypeOf[tokenId] = archetype;
         _safeMint(to, tokenId);
 
-        emit CarMinted(to, tokenId, archetype);
+        emit CarMinted(to, tokenId);
     }
 
     // ─── Parts ──────────────────────────────────────────────────────────────
@@ -216,11 +205,5 @@ contract CarNFT is ERC721Enumerable, Ownable {
 
     function _requireCarOwner(uint256 tokenId) private view {
         if (ownerOf(tokenId) != msg.sender) revert NotCarOwner(tokenId, msg.sender);
-    }
-
-    function _isValidArchetype(string calldata archetype) private pure returns (bool) {
-        bytes32 h = keccak256(bytes(archetype));
-        return h == keccak256("sport") || h == keccak256("muscle") || h == keccak256("stealth")
-            || h == keccak256("electric") || h == keccak256("street");
     }
 }

@@ -19,29 +19,24 @@ contract CarNFTTest is BaseTest {
         assertEq(carNft.nextTokenId(), 3);
     }
 
-    function test_mint_storesArchetype() public {
+    /// @dev The car a mint yields is decided entirely by the sequential token
+    ///      ID — the collection manifest maps it to a model, rarity and traits.
+    ///      Nothing about the car is chosen by the caller, so `CarMinted` needs
+    ///      to carry no more than the owner and the ID.
+    function test_mint_emitsOwnerAndTokenId() public {
         address alice = makeAddr("alice");
         vm.prank(owner);
         drift.mint(alice, 10e18);
 
         vm.startPrank(alice);
         drift.approve(address(carNft), MINT_FEE);
-        uint256 tokenId = carNft.mint("stealth");
+        vm.expectEmit(true, true, true, true, address(carNft));
+        emit CarNFT.CarMinted(alice, 1);
+        uint256 tokenId = carNft.mint();
         vm.stopPrank();
 
-        assertEq(carNft.archetypeOf(tokenId), "stealth");
-    }
-
-    function test_mint_rejectsUnknownArchetype() public {
-        address alice = makeAddr("alice");
-        vm.prank(owner);
-        drift.mint(alice, 10e18);
-
-        vm.startPrank(alice);
-        drift.approve(address(carNft), MINT_FEE);
-        vm.expectRevert(abi.encodeWithSelector(CarNFT.UnknownArchetype.selector, "hovercraft"));
-        carNft.mint("hovercraft");
-        vm.stopPrank();
+        assertEq(tokenId, 1);
+        assertEq(carNft.ownerOf(tokenId), alice);
     }
 
     function test_mint_revertsWithoutAllowance() public {
@@ -55,7 +50,7 @@ contract CarNFTTest is BaseTest {
                 IERC20Errors.ERC20InsufficientAllowance.selector, address(carNft), 0, MINT_FEE
             )
         );
-        carNft.mint("sport");
+        carNft.mint();
     }
 
     function test_mintWithPermit_needsNoSeparateApproval() public {
@@ -68,7 +63,7 @@ contract CarNFTTest is BaseTest {
             _signPermit(aliceKey, alice, address(carNft), MINT_FEE, deadline);
 
         vm.prank(alice);
-        uint256 tokenId = carNft.mintWithPermit("muscle", deadline, v, r, s);
+        uint256 tokenId = carNft.mintWithPermit(deadline, v, r, s);
 
         assertEq(carNft.ownerOf(tokenId), alice);
         assertEq(drift.balanceOf(alice), 10e18 - MINT_FEE);
@@ -146,8 +141,8 @@ contract CarNFTTest is BaseTest {
 
         vm.startPrank(alice);
         drift.approve(address(carNft), type(uint256).max);
-        uint256 a = carNft.mint("sport");
-        uint256 b = carNft.mint("street");
+        uint256 a = carNft.mint();
+        uint256 b = carNft.mint();
         vm.stopPrank();
 
         uint256[] memory owned = carNft.tokensOfOwner(alice);
@@ -173,8 +168,8 @@ contract CarNFTTest is BaseTest {
 
         vm.startPrank(alice);
         drift.approve(address(carNft), type(uint256).max);
-        uint256 first = carNft.mint("sport");
-        uint256 second = carNft.mint("street");
+        uint256 first = carNft.mint();
+        uint256 second = carNft.mint();
 
         vm.expectEmit(true, true, true, true, address(carNft));
         emit IERC721.Transfer(alice, alice, first);

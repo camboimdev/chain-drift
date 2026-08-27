@@ -169,12 +169,12 @@ export function LoginPage() {
               desc: "Unique on-chain assets with provable ownership",
             },
             {
-              label: "CUSTOMIZE",
-              desc: "Modular parts system. Infinite configurations",
+              label: "RACE",
+              desc: "Four-car grids, entry fees held in escrow",
             },
             {
-              label: "RACE",
-              desc: "Deterministic outcomes settled on-chain",
+              label: "VRF PAYOUTS",
+              desc: "Finish order drawn by Chainlink, settled on-chain",
             },
           ].map((f) => (
             <div
