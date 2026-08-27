@@ -1,61 +1,65 @@
-# Garage redesign — showroom bay, fleet grid, spec sheet
+# Wallet connect — market-standard modal with WalletConnect
 
-The garage was the first screen built and still read like it: a three-slot
-carousel over a grey pillared room, a plain name list, and no way to see the
-whole fleet at once. This replaces it.
+Connecting was a single button that silently picked the first injected
+connector: no way to choose a wallet, no mobile wallets at all, and a failed
+attempt bounced an error onto the login screen. This replaces it with the
+picker players already know from other dapps.
 
 ## Done
 
-- [x] `garage/design.ts` — shared tokens, rarity-as-brightness scale, trait helpers
-- [x] `garage/layout.ts` — one pure placement function for every mode; replaces
-      the slot-role table and the exit-slot `setTimeout` pruning
-- [x] `garage/GarageBay.tsx` — the room: reflector floor, technical grid,
-      Lightformer environment, one shadow-casting directional, ghost token plate
-- [x] `garage/CarBay.tsx` — per-car animated bay: turntable yaw, scan pad with
-      measurement dial and sweep, rarity ring, grid brackets, bay number
-- [x] `garage/GarageCamera.tsx` — camera rig that lerps between modes and hands
-      control to the player in inspect
-- [x] `garage/StatBars.tsx` — segmented stat readout, shared with `CarHUD`
-- [x] `garage/SpecSheet.tsx` — featured-car readout off `calculateCarStats`
-- [x] `garage/FleetIndex.tsx` — register with cross-highlight into the 3D
-- [x] `garage/GarageFrame.tsx` — corner brackets, header, mode cluster, hints
-- [x] `garage/ScrambleText.tsx` — 200ms mechanical value reveal
-- [x] `Garage.tsx` — rewritten around GALLERY / FLEET / INSPECT
-- [x] `CarHUD.tsx` — inspect HUD gained the same stat readout
-- [x] `public/fonts` — JetBrains Mono TTF so 3D text is on-brand
-- [x] Verified: `tsc -b`, `eslint src`, `vite build`, and all three modes
-      driven in the browser against a nine-car fleet
+- [x] `config/wagmi.ts` — added the `walletConnect` connector, gated on
+      `VITE_WALLETCONNECT_PROJECT_ID`, with `showQrModal: false` so the QR is
+      ours; EIP-6963 discovery already came free with wagmi
+- [x] `hooks/useWalletOptions.ts` — turns wagmi's flat connector array into one
+      row per wallet: 6963 wallets first, generic injected only when nothing
+      announced itself, Coinbase SDK dropped when the extension is present,
+      last-used wallet floated to the top
+- [x] `components/wallet/ConnectModal.tsx` — list / connecting / QR views, per
+      wallet connecting state, RECENT and INSTALLED badges, retry on failure,
+      Escape and backdrop close, body scroll lock
+- [x] `components/wallet/QrCode.tsx` — pairing URI drawn as hard squares from
+      the raw QR matrix, dark-on-light so scanners accept it
+- [x] `components/wallet/WalletMark.tsx` — 6963 icons as announced, monochrome
+      marks for the SDK connectors
+- [x] `context/WalletContext.tsx` — `connectWallet()` now opens the modal; the
+      connector-picking heuristic and its error plumbing are gone
+- [x] `shared/types/wallet.ts` — dropped the `"error"` wallet state, connect
+      errors belong to the modal; `connectWallet` is no longer a promise
+- [x] `LoginPage.tsx` / `App.tsx` — login shows the wordmark and one button;
+      the connecting band now only narrates session restore
+- [x] `.env.example`, README, ARCHITECTURE — WalletConnect project ID documented
+- [x] Verified: `tsc -b`, `eslint .`, `vite build`, and the modal driven in the
+      browser — list, QR view, relay-timeout failure, retry
 
 ## Review
 
-**The mechanic.** One selection, three views. `computeLayout(cars, index, mode)`
-returns a placement per car and every bay lerps towards its own; changing car
-and changing mode are the same motion, so there is no transition state to keep
-in sync. The old carousel needed `exit-left` / `exit-right` roles and a 700ms
-`setTimeout` to prune them — both are gone.
+**Why a modal at all.** The old `connectWallet()` guessed: first injected
+connector, else whatever was at index 0. With two extensions installed the
+player had no say, and Coinbase Smart Wallet was unreachable unless nothing else
+was installed. A list is the only honest answer once more than one wallet exists.
 
-**Seeing everything.** FLEET parks the whole collection on numbered bays and
-hides the side panels, because the grid *is* the register. Selected bay reads
-white; clicking it returns to GALLERY on the car you picked.
+**EIP-6963 does the work.** wagmi already discovers announced wallets and each
+arrives with its own name and icon, so the list needs no hardcoded registry —
+it deduplicates instead: the generic `injected` shim only appears when nothing
+announced itself, and the Coinbase SDK row disappears when the extension is
+there, because both would open the same wallet.
 
-**Rarity.** Brightness only, per the design system: the scan-pad ring is dim for
-Common and full white for Legendary, which is also the only tier that pulses.
+**The QR is drawn here.** `showQrModal: false` keeps WalletConnect's own overlay
+out; the pairing URI is encoded with `qrcode` and rendered as `<rect>`-sized
+path segments, which keeps the modules pixel-aligned and the panel on-brand.
+Module orientation was checked against `qrcode`'s own SVG renderer — identical
+coordinate sets — because a transposed matrix still *looks* like a valid QR.
 
-**Honesty.** The spec sheet shows `calculateCarStats` — the numbers the race
-animation actually drives with — and states underneath that the finish order
-settles on Chainlink VRF, so a panel of stat bars cannot be read as odds.
+**Failure states are local.** Rejection, a request already open, and an
+unreachable relay each resolve inside the panel with a retry, so a failed
+attempt never navigates the player anywhere. The relay case needs its own 15s
+timeout: an invalid project ID or a firewalled websocket makes the provider
+retry silently forever rather than reject.
 
-**The token plate.** Filled dark grey it was unreadable against the wall, so it
-was rebuilt as a neon sign: near-black glass fill, a thin `#00FF88` stroke on
-the glyph edge and a wide soft outline halo. The stroke is the only thing in the
-room bright enough to clear the bloom threshold, so the glow is produced by the
-lighting rather than painted on, and the polished floor picks the whole thing up
-as a reflection. The wall's light seam moved from eye height down to a plinth so
-it stops cutting through the digits.
+**Bundle.** wagmi imports `@walletconnect/ethereum-provider` dynamically, so it
+lands in its own chunk and is only fetched when a player actually picks
+WalletConnect.
 
-**Things tried and dropped.** Emissive ceiling light bars cropped into frame at
-every camera height; `ContactShadows` at room scale smeared into black
-rectangles behind the far rows. Both were replaced by the Lightformer
-environment plus one wide shadow-casting directional. The `Noise` pass from
-`@react-three/postprocessing` rendered the whole canvas black in this scene —
-Bloom and Vignette only.
+**Without a project ID** the WalletConnect row is simply absent and the app runs
+with browser and Coinbase wallets — in dev a dashed hint names the missing
+variable instead.

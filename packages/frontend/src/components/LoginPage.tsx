@@ -12,8 +12,10 @@ const DS = {
 };
 
 export function LoginPage() {
-  const { connectWallet, state, error } = useWallet();
-  const isConnecting = state === "connecting";
+  const { connectWallet, state } = useWallet();
+  // Only true while wagmi restores a previous session on load — a connection
+  // the player started themselves is narrated by the connect modal.
+  const isReconnecting = state === "connecting";
 
   return (
     <div
@@ -79,7 +81,7 @@ export function LoginPage() {
         </div>
 
         {/* Connecting state */}
-        {isConnecting && (
+        {isReconnecting && (
           <div
             style={{
               marginBottom: 32,
@@ -98,36 +100,18 @@ export function LoginPage() {
                 marginBottom: 6,
               }}
             >
-              CONNECTING TO BLOCKCHAIN
+              RESTORING SESSION
             </div>
             <div style={{ fontSize: 10, color: DS.textMeta, letterSpacing: "0.1em" }}>
-              CONFIRM IN YOUR WALLET
+              RECONNECTING TO YOUR WALLET
             </div>
-          </div>
-        )}
-
-        {/* Error */}
-        {error && (
-          <div
-            style={{
-              marginBottom: 24,
-              width: "100%",
-              padding: "12px 16px",
-              border: `1px solid ${DS.border}`,
-              fontSize: 11,
-              color: DS.textPrimary,
-              letterSpacing: "0.08em",
-            }}
-          >
-            ERROR: {error}
           </div>
         )}
 
         {/* Connect button */}
-        {!isConnecting && (
+        {!isReconnecting && (
           <button
             onClick={connectWallet}
-            disabled={isConnecting}
             style={{
               width: "100%",
               padding: "16px",
