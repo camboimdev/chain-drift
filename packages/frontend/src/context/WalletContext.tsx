@@ -1,9 +1,9 @@
 /**
- * WalletContext — a thin, game-shaped facade over wagmi.
+ * WalletProvider — a thin, game-shaped facade over wagmi.
  *
  * The rest of the app only ever needs "who is connected, on which chain, with
- * how much DRIFT", so wagmi's hooks stay in here and the components keep the
- * same `useWallet()` surface they had before.
+ * how much DRIFT", so wagmi's hooks stay in here and everything else reaches
+ * them through `useWallet()` in `walletContextValue.ts`.
  */
 
 import type {
@@ -13,21 +13,12 @@ import type {
   WalletState,
 } from "@chain-drift/shared";
 import type { ReactNode } from "react";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatEther } from "viem";
 import { useAccount, useBalance, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { CHAIN_ID, NETWORK_LABEL } from "../config/chain";
 import { fetchDriftBalance } from "../services/driftToken";
-
-export const WalletContext = createContext<WalletContextType | undefined>(undefined);
-
-export function useWallet(): WalletContextType {
-  const context = useContext(WalletContext);
-  if (context === undefined) {
-    throw new Error("useWallet must be used within a WalletProvider");
-  }
-  return context;
-}
+import { WalletContext } from "./walletContextValue";
 
 interface WalletProviderProps {
   children: ReactNode;

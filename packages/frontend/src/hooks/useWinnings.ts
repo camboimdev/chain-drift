@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { useWallet } from "../context/WalletContext";
+import { useWallet } from "../context/walletContextValue";
 import { claimWinnings, getPendingWithdrawals } from "../services/raceContract";
 
 export type ClaimState = "idle" | "claiming" | "success" | "error";

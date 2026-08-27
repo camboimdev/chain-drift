@@ -4,9 +4,6 @@ On-chain NFT drift racing on **Base**. Players mint car NFTs, stake DRIFT to
 enter a race room, and the finishing order is decided on-chain by Chainlink VRF.
 The 3D race is a replay of a result the contract already settled.
 
-> This repository is the Base rewrite. The original Klever implementation lives
-> in the `chain-drift` repository and is no longer developed.
-
 ## Stack
 
 | Layer | Choice |
@@ -25,8 +22,14 @@ packages/
   frontend/      The game: 3D garage, race scene, lobby
   shared/        Types, race logic, generated contract ABIs
   oracle/        Leaderboard recorder — watches RaceFinished, writes stats
-  metadata-api/  ERC-721 metadata JSON + IPFS pinning cache
 ```
+
+Token metadata is not served by this repository. The collection is pinned to
+IPFS and `CarNFT`'s base URI points at that directory, so `tokenURI` resolves
+without anything of ours running. `scripts/collection/` holds the record of what
+was pinned, and `scripts/pin-collection.mjs` / `pin-metadata-dir.mjs` are how it
+gets republished — both need an asset pipeline that lives outside this
+repository, so neither runs out of a fresh clone.
 
 ## Contracts
 
@@ -53,9 +56,9 @@ contract score the field, sort it, and credit the prize split.
 
 Two deliberate design points:
 
-- **VRF, not a block value.** The Klever version read `get_block_random_seed()`.
-  There is no safe EVM equivalent — `block.prevrandao` and `blockhash` are both
-  influenceable by the proposer, and this contract pays out real value.
+- **VRF, not a block value.** `block.prevrandao` and `blockhash` are both
+  influenceable by the proposer, and this contract pays out real value. There is
+  no on-chain source of randomness cheap enough to trust here except an oracle.
 - **Pull payments.** The payout runs inside the VRF callback, which has a fixed
   gas limit. Crediting `pendingWithdrawals` and letting winners `claim()` keeps
   the callback cheap and stops any single recipient from making it revert.

@@ -6,8 +6,7 @@
  * truncation, so the UI can show a payout before the VRF callback lands and
  * still match the amount the contract credits to the wei.
  *
- * All amounts are in wei — DRIFT has 18 decimals on Base, unlike the 6-decimal
- * Klever KDA the game came from.
+ * All amounts are in wei: DRIFT has 18 decimals.
  */
 
 /** DRIFT decimals on Base. */

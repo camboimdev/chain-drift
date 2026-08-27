@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { formatDrift } from "@chain-drift/shared";
-import { useWallet } from "../context/WalletContext";
+import { useWallet } from "../context/walletContextValue";
 import { useMintCar } from "../hooks/useMintCar";
 import { useWinnings } from "../hooks/useWinnings";
+import { TxLink } from "./TxLink";
 
 const DS = {
   bg:          "#000000",
@@ -540,7 +541,7 @@ export function WalletHUD({ fleetCount, onMintSuccess }: WalletHUDProps) {
                   }}
                 >
                   <span style={{ color: DS.textDisabled, letterSpacing: "0.16em" }}>TX: </span>
-                  {txHash}
+                  <TxLink hash={txHash} color={DS.textMeta} />
                 </div>
               </div>
             )}

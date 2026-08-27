@@ -3,7 +3,7 @@
  * Batch Collection Pinner — Chain Drift
  *
  * Pins nft.png + car.glb to Pinata/IPFS for each car in the collection and
- * writes packages/metadata-api/collection-cache.json with { image, model }
+ * writes scripts/collection/collection-cache.json with { image, model }
  * CIDs per token nonce.
  *
  * NOTE: Individual metadata.json files are NOT pinned here.
@@ -21,8 +21,17 @@
  *   node scripts/pin-collection.mjs [--concurrency 3] [--force]
  *   node scripts/pin-collection.mjs --force   # re-pin everything
  *
- * Env (loaded from packages/metadata-api/.env):
+ * Env (loaded from scripts/collection/.env):
  *   PINATA_API_KEY, PINATA_API_SECRET
+ *
+ * REQUIRES the asset pipeline output: a `chain_drift_pipeline/` directory
+ * beside this repository, holding `output/collection/collection.json` and one
+ * `car_NNN/` folder per car. It is not part of this repository, and without it
+ * this script cannot run.
+ *
+ * You only need this to re-pin or extend the collection. The 61 published cars
+ * are already pinned, recorded in `packages/frontend/src/data/collectionManifest.ts`,
+ * and pointed at by the deployed contract's base URI.
  */
 
 import { readFileSync, writeFileSync, existsSync, renameSync } from "node:fs";
@@ -36,7 +45,7 @@ const ROOT = join(__dirname, "..");
 
 // ─── Load env ────────────────────────────────────────────────────────────────
 
-const envPath = join(ROOT, "packages/metadata-api/.env");
+const envPath = join(ROOT, "scripts/collection/.env");
 if (existsSync(envPath)) {
   const envText = readFileSync(envPath, "utf8");
   for (const line of envText.split("\n")) {
@@ -68,7 +77,7 @@ const FORCE        = values.force;
 
 const COLLECTION_DIR  = join(ROOT, "chain_drift_pipeline/output/collection");
 const COLLECTION_JSON = join(COLLECTION_DIR, "collection.json");
-const CACHE_PATH      = join(ROOT, "packages/metadata-api/collection-cache.json");
+const CACHE_PATH      = join(ROOT, "scripts/collection/collection-cache.json");
 const MANIFEST_PATH   = join(ROOT, "packages/frontend/src/data/collectionManifest.ts");
 // Gateway baked into the generated manifest. The frontend re-resolves every
 // URL against VITE_IPFS_GATEWAYS at runtime, so this is only the default.

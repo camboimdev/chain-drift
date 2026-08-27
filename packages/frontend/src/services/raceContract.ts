@@ -109,7 +109,7 @@ export async function getRace(raceId: bigint): Promise<OnChainRace> {
  * Race rooms still accepting players, newest first.
  *
  * The contract does the scan, so this is one RPC round trip plus one per room
- * shown — the Klever version issued three calls per candidate ID.
+ * shown, rather than one call per candidate ID.
  */
 export async function getOpenRaces(limit = 10, maxScan = 30): Promise<OnChainRace[]> {
   const raceIds = await readContract(wagmiConfig, {

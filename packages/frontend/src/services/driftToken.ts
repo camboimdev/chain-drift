@@ -1,10 +1,11 @@
 // ─── DRIFT Token ──────────────────────────────────────────────────────────
 //
-// Balances, allowances and the testnet faucet.
+// Balances and allowances. Amounts are formatted through `formatDrift` in
+// `@chain-drift/shared` — this module deals in wei and raw reads only.
 
 import { driftTokenAbi } from "@chain-drift/shared";
 import { readContract, waitForTransactionReceipt, writeContract } from "@wagmi/core";
-import { formatEther, parseEther } from "viem";
+import { formatEther } from "viem";
 import { DRIFT_TOKEN_ADDRESS, requireAddress } from "../config/chain";
 import { wagmiConfig } from "../config/wagmi";
 
@@ -63,37 +64,3 @@ export async function ensureAllowance(
   });
   await waitForTransactionReceipt(wagmiConfig, { hash });
 }
-
-/** Testnet faucet: 100 DRIFT per 12 hours. Reverts on mainnet deployments. */
-export async function claimFaucet(): Promise<`0x${string}`> {
-  const hash = await writeContract(wagmiConfig, {
-    address: driftAddress(),
-    abi: driftTokenAbi,
-    functionName: "faucet",
-  });
-  await waitForTransactionReceipt(wagmiConfig, { hash });
-  return hash;
-}
-
-/** Seconds until `address` may call the faucet again; 0 when it is available. */
-export async function faucetCooldownRemaining(address: `0x${string}`): Promise<number> {
-  const [last, cooldown] = await Promise.all([
-    readContract(wagmiConfig, {
-      address: driftAddress(),
-      abi: driftTokenAbi,
-      functionName: "lastFaucetClaim",
-      args: [address],
-    }),
-    readContract(wagmiConfig, {
-      address: driftAddress(),
-      abi: driftTokenAbi,
-      functionName: "FAUCET_COOLDOWN",
-    }),
-  ]);
-  if (last === 0n) return 0;
-
-  const availableAt = Number(last + cooldown);
-  return Math.max(0, availableAt - Math.floor(Date.now() / 1000));
-}
-
-export { parseEther as parseDrift, formatEther as formatDrift };

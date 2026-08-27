@@ -29,11 +29,11 @@ import {Leaderboard} from "../src/Leaderboard.sol";
 ///                         new RaceEscrow as a consumer, instead of creating one
 ///   VRF_FUND_WEI          native funding for a newly created subscription
 ///                         (default 0.02 ether — see .env.example for why 0.01
-///                         is below the DON's affordability reserve)
-///                         (default 0.01 ether; 0 skips funding)
+///                         is below the DON's affordability reserve; 0 skips)
 ///   MINT_FEE_DRIFT        car mint fee in whole DRIFT (default 100)
 ///   INITIAL_SUPPLY_DRIFT  DRIFT minted to the deployer (default 10_000_000)
-///   TOKEN_BASE_URI        metadata base URI (default the local metadata-api)
+///   TOKEN_BASE_URI        metadata base URI, trailing slash required
+///                         (default the pinned IPFS collection directory)
 ///   FAUCET_ENABLED        open the DRIFT faucet (default true)
 ///   RECORDER_ADDRESS      leaderboard recorder (default the deployer)
 contract Deploy is DeployerKey {
@@ -93,7 +93,12 @@ contract Deploy is DeployerKey {
         cfg.vrfFundWei = vm.envOr("VRF_FUND_WEI", uint256(0.02 ether));
         cfg.mintFee = vm.envOr("MINT_FEE_DRIFT", uint256(100)) * 1e18;
         cfg.initialSupply = vm.envOr("INITIAL_SUPPLY_DRIFT", uint256(10_000_000)) * 1e18;
-        cfg.baseURI = vm.envOr("TOKEN_BASE_URI", string("http://localhost:3001/metadata/"));
+        // The published collection directory. `tokenURI` appends the token ID,
+        // so this has to end in a slash.
+        cfg.baseURI = vm.envOr(
+            "TOKEN_BASE_URI",
+            string("ipfs://bafybeickzyyzkvjjiq4ap4xbeitisopy7mmlgr3hphtxx42ksov52c42dm/")
+        );
         cfg.faucetEnabled = vm.envOr("FAUCET_ENABLED", true);
         cfg.recorder = vm.envOr("RECORDER_ADDRESS", deployer);
     }

@@ -63,6 +63,55 @@ claim it — the money was real and unreachable.
 **Rule:** when a contract uses pull payments, the claim path ships in the same
 change as the screen that announces the win.
 
+## A constant that is always the same value is a branch that never runs
+
+The track is one straight, so `isAtCorner` returned `false` unconditionally.
+That made the corner branch in `calculateSpeedVariation` unreachable, which in
+turn meant the `handling` stat — displayed on every car card — affected nothing
+at all. Three layers of code kept alive by a stub returning a literal.
+
+**Rule:** when a helper hardcodes its return, follow every caller before leaving
+it there. The dead code is rarely the stub itself; it is what the stub gates.
+
+## A service nobody points at is not infrastructure
+
+`packages/metadata-api` served `/metadata/:tokenId` — a whole package, a `.env`,
+a README entry and a `dev` script. The deployed contract's base URI had long
+since moved to a pinned IPFS directory, so nothing ever called it.
+
+**Rule:** for anything that serves a URL, check what actually points at it —
+the contract, the config, the deploy default — not whether the code still runs.
+
+## Two functions with the same name and different behaviour
+
+`driftToken.ts` re-exported `formatEther as formatDrift`. `@chain-drift/shared`
+exports its own `formatDrift`, which trims trailing zeros. Neither re-export had
+a caller, but either import would have type-checked and rendered differently.
+
+**Rule:** never re-export a general utility under a domain name that already
+exists in the codebase. If the domain name is taken, the alias is a trap.
+
+## Rewrite comparisons into reasons
+
+Most references to the previous chain read "the old version did X, so we do Y".
+Every one of those decisions stands on its own: VRF because `prevrandao` is
+proposer-influenceable, pull payments because the callback has a fixed gas
+limit, ownership checks because the leaderboard would be corrupted otherwise.
+
+**Rule:** justify a decision by what it protects against, not by what it
+replaced. The comparison rots the moment the reader has no memory of the thing
+being compared to — and it drags dead vocabulary along with it.
+
+## Delete or use — a third state is not available
+
+`BLOCK_EXPLORER_URL` sat unused while both mint screens printed a bare 66-
+character transaction hash the player would have had to paste into an explorer
+by hand. The export was not the problem; the unfinished thought was.
+
+**Rule:** an unused export is a question, not a verdict. Ask what it was for —
+sometimes the answer is that the feature is half-built, and finishing it costs
+less than the deletion.
+
 ## Verify the whole flow, not the screen you touched
 
 Every problem above survived because each screen was reviewed on its own. They

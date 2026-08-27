@@ -18,9 +18,8 @@ import {VRFV2PlusClient} from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/V
 /// Chainlink VRF for one random word. The VRF callback scores every car, sorts
 /// the field, and credits the prize split.
 ///
-/// @dev Why VRF and not a block value: the Klever version read
-///      `get_block_random_seed()`, which has no safe EVM equivalent —
-///      `block.prevrandao` and `blockhash` are both influenceable by the
+/// @dev Why VRF and not a block value: `block.prevrandao` and `blockhash` are
+///      the only on-chain alternatives and both are influenceable by the
 ///      proposer, and this contract pays out real value on that number.
 ///
 /// @dev Why pull payments: the payout runs inside the VRF callback, which has a
@@ -275,8 +274,8 @@ contract RaceEscrow is VRFConsumerBaseV2Plus, ReentrancyGuard {
         Race storage race = _races[raceId];
         if (race.status != RaceStatus.Open) revert RaceNotOpen(raceId, race.status);
         if (hasEntered[raceId][msg.sender]) revert AlreadyEntered(raceId, msg.sender);
-        // The Klever version took the car ID on trust; racing a car you do not own
-        // corrupts the leaderboard and the replay, so it is checked here.
+        // Racing a car you do not own would corrupt the leaderboard and the
+        // replay, so ownership is checked here rather than taken on trust.
         if (carNft.ownerOf(carTokenId) != msg.sender) revert NotCarOwner(carTokenId, msg.sender);
 
         hasEntered[raceId][msg.sender] = true;
@@ -324,8 +323,7 @@ contract RaceEscrow is VRFConsumerBaseV2Plus, ReentrancyGuard {
 
     /// @inheritdoc VRFConsumerBaseV2Plus
     /// @dev Scores each car as `keccak256(randomWord, carTokenId)` and sorts
-    ///      descending — the same construction as the Klever contract, with
-    ///      keccak in place of sha256 because it is far cheaper on the EVM.
+    ///      descending, so one VRF word settles the whole grid.
     function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords)
         internal
         override
@@ -423,8 +421,9 @@ contract RaceEscrow is VRFConsumerBaseV2Plus, ReentrancyGuard {
     ///      `fulfillRandomWords` returns early for any race that is no longer
     ///      Resolving, so the refund cannot be paid twice.
     ///
-    /// @dev The Klever version refunded only the caller and then marked the race
-    ///      Cancelled, which locked everyone else out of their own refund.
+    /// @dev Every entrant is credited, not just the caller: crediting one and
+    ///      then marking the race Cancelled would lock the rest out of their
+    ///      own refund.
     function cancelRace(uint256 raceId) external {
         Race storage race = _races[raceId];
 

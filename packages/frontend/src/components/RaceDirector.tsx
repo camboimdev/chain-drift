@@ -28,13 +28,8 @@ import {
 } from "@chain-drift/shared";
 import { Car3D } from "./Car3D";
 import { CarExhaust, type CarExhaustHandle } from "./effects/CarExhaust";
-import {
-  RaceTrack,
-  getTrackPosition,
-  getTrackRotation,
-  isAtCorner,
-} from "./RaceTrack";
-import { TRACK_CONFIG } from "../config/trackConfig";
+import { RaceTrack } from "./RaceTrack";
+import { getTrackPosition, TRACK_CONFIG } from "../config/trackConfig";
 
 // ============================================================================
 // Ground contract
@@ -613,12 +608,9 @@ function RacingCar({
     );
 
     // Calculate current speed with acceleration curve and boost
-    const isCorner = isAtCorner(progressRef.current);
     const visualSpeed = calculateSpeedVariation(
       participant.stats.speed,
       progressRef.current,
-      isCorner,
-      participant.stats.handling,
       participant.stats.acceleration,
       raceTime,
       boostStateRef.current
@@ -644,7 +636,7 @@ function RacingCar({
     // ---- Racing line. The seeded lane drift IS the steering input; the old
     // unmotivated sine weave is gone, and the drift now also drives roll/yaw.
     const targetLaneDrift = calculateLaneDrift(
-      participant.laneIndex,
+      participant.stats.handling,
       raceTime,
       participant.car.id,
       raceProgress
@@ -682,8 +674,6 @@ function RacingCar({
       Math.min(progressRef.current, 1),
       participant.laneIndex
     );
-    const trackRotation = getTrackRotation(progressRef.current);
-
     const worldX = trackPosition.x + lateralOffsetRef.current;
     const worldZ = trackPosition.z;
     const distanceStep = Math.max(0, worldZ - previousZRef.current);
@@ -700,7 +690,9 @@ function RacingCar({
     // side, which is a positive rotation about Z.
     const targetRoll = lateralSignal * MAX_ROLL * setup.rollGain;
     // Point the car where it is actually going instead of sliding on rails.
-    const targetYaw = trackRotation + setup.yawTrim + lateralSignal * MAX_YAW;
+    // The track runs straight down +Z, so a car's yaw is entirely its own trim
+    // plus how hard it is currently moving sideways.
+    const targetYaw = setup.yawTrim + lateralSignal * MAX_YAW;
 
     pitchRef.current = MathUtils.damp(pitchRef.current, targetPitch, 9, dt);
     rollRef.current = MathUtils.damp(rollRef.current, targetRoll, 7, dt);

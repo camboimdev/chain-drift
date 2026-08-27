@@ -51,18 +51,6 @@ function orderedGateways(): string[] {
     : IPFS_GATEWAYS;
 }
 
-/** Every gateway URL for an IPFS reference, most-likely-to-work first. */
-export function ipfsCandidates(url: string): string[] {
-  const path = ipfsPath(url);
-  if (!path) return [url];
-  return orderedGateways().map((gw) => `${gw}/${path}`);
-}
-
-/** The single best URL for an IPFS reference (for <img>, links, etc.). */
-export function resolveIpfs(url: string): string {
-  return ipfsCandidates(url)[0];
-}
-
 /**
  * Fetch an IPFS resource, trying each gateway in turn until one responds.
  * Throws only when every gateway fails.

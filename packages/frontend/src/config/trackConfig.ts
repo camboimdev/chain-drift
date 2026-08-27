@@ -1,3 +1,5 @@
+import { Vector3 } from "three";
+
 /**
  * Track Configuration - Forward Racing Circuit
  * Extracted to a separate file to avoid circular imports.
@@ -59,4 +61,12 @@ export function getLanePosition(laneIndex: number): number {
   const halfWidth = TRACK_CONFIG.trackWidth / 2;
   const laneOffset = (laneIndex + 0.5) * LANE_WIDTH;
   return -halfWidth + laneOffset;
+}
+
+/**
+ * World position for a car at `progress` (0-1) in `laneIndex`.
+ * The track runs straight down +Z; the drivable surface top is exactly y = 0.
+ */
+export function getTrackPosition(progress: number, laneIndex: number): Vector3 {
+  return new Vector3(getLanePosition(laneIndex), 0, progress * TRACK_CONFIG.totalDistance);
 }

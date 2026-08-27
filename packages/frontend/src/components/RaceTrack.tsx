@@ -7,38 +7,10 @@ import {
   Object3D,
   RepeatWrapping,
   SRGBColorSpace,
-  Vector3,
 } from "three";
 import type { Group } from "three";
 import { useRaceStore } from "../stores/raceStore";
 import { TRACK_CONFIG, LANE_WIDTH, getLanePosition } from "../config/trackConfig";
-
-// Re-export config so consumers can import everything from the track module
-export { TRACK_CONFIG, LANE_WIDTH, getLanePosition } from "../config/trackConfig";
-
-/**
- * Get world position for a car given its progress (0-1) and lane.
- * The drivable surface top is exactly y = 0.
- */
-export function getTrackPosition(progress: number, laneIndex: number): Vector3 {
-  const z = progress * TRACK_CONFIG.totalDistance;
-  const x = getLanePosition(laneIndex);
-  return new Vector3(x, 0, z);
-}
-
-/**
- * Get rotation (cars face +Z direction)
- */
-export function getTrackRotation(_progress: number): number {
-  return 0; // Facing +Z
-}
-
-/**
- * Check if position is at a "corner" - the circuit is a straight, so never.
- */
-export function isAtCorner(_progress: number): boolean {
-  return false;
-}
 
 // ============================================
 // Track cross-section (derived once)

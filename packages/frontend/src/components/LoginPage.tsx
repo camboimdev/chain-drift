@@ -1,4 +1,4 @@
-import { useWallet } from "../context/WalletContext";
+import { useWallet } from "../context/walletContextValue";
 
 const DS = {
   bg: "#000000",

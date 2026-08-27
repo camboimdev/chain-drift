@@ -11,7 +11,7 @@ import { RaceMultiplayerLobby } from "./components/RaceMultiplayerLobby";
 import { RaceWaitingRoom } from "./components/RaceWaitingRoom";
 import { WalletProvider } from "./context/WalletContext";
 import { Web3Provider } from "./providers/Web3Provider";
-import { useWallet } from "./context/WalletContext";
+import { useWallet } from "./context/walletContextValue";
 import { fetchPlayerCars } from "./services/fetchPlayerCars";
 import type { RaceFinish } from "./services/raceContract";
 

@@ -4,7 +4,7 @@
  *
  * Step 2 of the publishing flow (run after pin-collection.mjs).
  *
- * Reads packages/metadata-api/collection-cache.json for the current image +
+ * Reads scripts/collection/collection-cache.json for the current image +
  * model CIDs, injects full IPFS URLs into each car's metadata.json, then
  * uploads all metadata files to Pinata as ONE directory with files named by
  * token nonce ("1", "2", "3", ...).
@@ -20,10 +20,19 @@
  * Usage:
  *   node scripts/pin-metadata-dir.mjs
  *
- * Env (loaded from packages/metadata-api/.env):
+ * Env (loaded from scripts/collection/.env):
  *   PINATA_API_KEY, PINATA_API_SECRET
  *   PIPELINE_COLLECTION_DIR — render pipeline output/collection folder
  *   IPFS_GATEWAY            — gateway used for the printed verification URLs
+ *
+ * REQUIRES the asset pipeline output: a `chain_drift_pipeline/` directory
+ * beside this repository, holding `output/collection/collection.json` and one
+ * `car_NNN/` folder per car. It is not part of this repository, and without it
+ * this script cannot run.
+ *
+ * You only need this to re-pin or extend the collection. The 61 published cars
+ * are already pinned, recorded in `packages/frontend/src/data/collectionManifest.ts`,
+ * and pointed at by the deployed contract's base URI.
  */
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -35,7 +44,7 @@ const ROOT = join(__dirname, "..");
 
 // ─── Load env ─────────────────────────────────────────────────────────────────
 
-const envPath = join(ROOT, "packages/metadata-api/.env");
+const envPath = join(ROOT, "scripts/collection/.env");
 if (existsSync(envPath)) {
   for (const line of readFileSync(envPath, "utf8").split("\n")) {
     const trimmed = line.trim();
@@ -51,7 +60,7 @@ if (existsSync(envPath)) {
 const PINATA_API_KEY    = process.env.PINATA_API_KEY;
 const PINATA_API_SECRET = process.env.PINATA_API_SECRET;
 if (!PINATA_API_KEY || !PINATA_API_SECRET) {
-  console.error("Missing PINATA_API_KEY or PINATA_API_SECRET in packages/metadata-api/.env");
+  console.error("Missing PINATA_API_KEY or PINATA_API_SECRET in scripts/collection/.env");
   process.exit(1);
 }
 
@@ -63,7 +72,7 @@ const IPFS_GATEWAY   = process.env.IPFS_GATEWAY ?? "https://gateway.pinata.cloud
 // its output/collection folder.
 const COLLECTION_DIR = process.env.PIPELINE_COLLECTION_DIR
   ?? join(ROOT, "chain_drift_pipeline/output/collection");
-const CACHE_PATH     = join(ROOT, "packages/metadata-api/collection-cache.json");
+const CACHE_PATH     = join(ROOT, "scripts/collection/collection-cache.json");
 
 if (!existsSync(COLLECTION_DIR)) {
   console.error(`Collection dir not found: ${COLLECTION_DIR}`);
@@ -165,6 +174,6 @@ console.log(`  2. pnpm --filter @chain-drift/contracts set-base-uri:base-sepolia
 
 // Save the folder CID for reference
 const out = { folderCid, metadataBaseUri: `${IPFS_GATEWAY}/${folderCid}`, count: entries.length };
-writeFileSync(join(ROOT, "packages/metadata-api/metadata-dir.json"), JSON.stringify(out, null, 2));
+writeFileSync(join(ROOT, "scripts/collection/metadata-dir.json"), JSON.stringify(out, null, 2));
 console.log("");
-console.log("Saved to packages/metadata-api/metadata-dir.json");
+console.log("Saved to scripts/collection/metadata-dir.json");

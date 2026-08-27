@@ -109,8 +109,6 @@ export function calculateTargetProgress(
 export function calculateSpeedVariation(
   baseSpeed: number,
   trackProgress: number,
-  isCorner: boolean,
-  handling: number,
   acceleration: number,
   raceTime: number,
   boostState?: { active: boolean; intensity: number }
@@ -121,18 +119,10 @@ export function calculateSpeedVariation(
   const accelerationCurve = Math.min(1, raceTime / accelerationTime);
   const easedAcceleration = 1 - Math.pow(1 - accelerationCurve, 3); // Ease out cubic
   
-  // Base speed with acceleration applied
-  let speed = baseSpeed * (0.3 + 0.7 * easedAcceleration);
-  
-  if (isCorner) {
-    // Better handling = less slowdown in corners
-    const cornerPenalty = 0.3 * (1 - handling / 100);
-    speed *= (1 - cornerPenalty);
-  } else {
-    // Slight speed boost on straights
-    speed *= 1.08;
-  }
-  
+  // Base speed with acceleration applied. The circuit is a single straight,
+  // so there is no cornering term — every metre is a straight-line metre.
+  let speed = baseSpeed * (0.3 + 0.7 * easedAcceleration) * 1.08;
+
   // Apply boost if active
   if (boostState?.active) {
     speed *= (1 + boostState.intensity * 0.25); // Up to 25% boost
@@ -216,35 +206,37 @@ export function updateAIBoostState(
 }
 
 /**
- * Calculate lane drift/offset for AI cars
- * Creates more realistic racing lines and enables overtaking visuals
+ * Lateral offset within a car's lane — the weave that makes a straight read as
+ * racing rather than four cars on rails.
+ *
+ * `handling` is what the amplitude scales against: on a straight there is no
+ * corner for it to bite in, so it shows up as line-holding instead. A Drift
+ * Coupe tracks close to its lane centre; a Cyber Muscle wanders.
  */
 export function calculateLaneDrift(
-  _baseLaneIndex: number,
+  handling: number,
   raceTime: number,
   carId: string,
   raceProgress: number
 ): number {
-  // Create unique pattern per car using car ID
-  const hash = carId.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
+  // A per-car phase, so two cars of the same archetype do not weave in unison.
+  const hash = carId.split("").reduce((a, b) => a + b.charCodeAt(0), 0);
   const phase = hash % 100;
-  
-  // Base lane position
-  let drift = 0;
-  
-  // Slow weaving within lane (for realism)
-  drift += Math.sin(raceTime * 0.8 + phase * 0.1) * 0.3;
-  
-  // Occasional larger moves (simulates positioning)
+
+  // 100 handling holds the line; 50 wanders at roughly double the amplitude.
+  const looseness = 1.5 - handling / 100;
+
+  // Slow weave within the lane.
+  let drift = Math.sin(raceTime * 0.8 + phase * 0.1) * 0.3 * looseness;
+
+  // Occasional larger move, as if repositioning.
   const positioningPhase = Math.sin(raceTime * 0.2 + phase * 0.05);
   if (Math.abs(positioningPhase) > 0.8) {
-    drift += positioningPhase * 0.5;
+    drift += positioningPhase * 0.5 * looseness;
   }
-  
-  // Near finish, less weaving (more focused)
-  if (raceProgress > 0.9) {
-    drift *= 0.3;
-  }
-  
+
+  // Near the finish everyone tidies up.
+  if (raceProgress > 0.9) drift *= 0.3;
+
   return drift;
 }

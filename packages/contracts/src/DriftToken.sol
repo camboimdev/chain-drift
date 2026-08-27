@@ -7,10 +7,8 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 /// @title DRIFT — Chain Drift in-game economy token
 /// @notice ERC-20 used for car mint fees and race entry fees.
-///         Replaces the Klever KDA `DRIFT-1Q3O`.
-/// @dev 18 decimals (EVM convention) instead of the 6 used on Klever.
-///      `ERC20Permit` lets CarNFT and RaceEscrow pull the fee in a single
-///      user transaction — no separate `approve` round trip.
+/// @dev `ERC20Permit` lets CarNFT and RaceEscrow pull the fee in a single user
+///      transaction — no separate `approve` round trip.
 contract DriftToken is ERC20, ERC20Permit, Ownable {
     /// @notice Amount handed out per `faucet()` call. Testnet convenience only.
     /// @dev Sized against the game's prices: one claim covers a car (100 DRIFT)

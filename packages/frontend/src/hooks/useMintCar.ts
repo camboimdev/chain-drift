@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { useWallet } from "../context/WalletContext";
+import { useWallet } from "../context/walletContextValue";
 import { fetchMintFeeDrift, mintCar } from "../services/carNft";
 
 export type MintState = "idle" | "minting" | "success" | "error";

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMintCar } from "../hooks/useMintCar";
+import { TxLink } from "./TxLink";
 
 const DS = {
   bg:          "#000000",
@@ -289,7 +290,7 @@ export function GarageEmptyState({ onMintSuccess }: GarageEmptyStateProps) {
               }}
             >
               <span style={{ color: DS.textDisabled, letterSpacing: "0.18em" }}>TX: </span>
-              {txHash}
+              <TxLink hash={txHash} color={DS.textMeta} />
             </div>
             <div style={{ fontSize: 8, color: DS.textDisabled, letterSpacing: "0.12em", marginBottom: 20 }}>
               Your car NFT is being confirmed on-chain.

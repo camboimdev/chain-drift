@@ -27,8 +27,6 @@ export const CHAIN = CHAIN_ID === CHAIN_IDS.base ? base : baseSepolia;
 
 export const NETWORK_LABEL = CHAIN_LABELS[CHAIN_ID];
 
-export const IS_TESTNET = CHAIN_ID === CHAIN_IDS.baseSepolia;
-
 /** Optional dedicated RPC (Alchemy, QuickNode…). Falls back to the public one. */
 export const RPC_URL =
   (import.meta.env.VITE_RPC_URL as string | undefined) ?? CHAIN.rpcUrls.default.http[0];

@@ -77,9 +77,9 @@ OPEN ──(room fills)──> LOCKED ──(requestResolve)──> RESOLVING
         └──(1h timeout, cancelRace)──> CANCELLED ──────────────┘
 ```
 
-Scoring, unchanged in spirit from the Klever version:
-`score = keccak256(randomWord, carTokenId)`, sorted descending. keccak replaces
-sha256 because it is far cheaper on the EVM.
+Scoring is `score = keccak256(randomWord, carTokenId)`, sorted descending: one
+VRF word fans out into a per-car score, so a single request settles the whole
+grid.
 
 Prize split, mirroring `shared/src/utils/economy.ts`. Shares are of the **gross**
 pool, so the table reads directly against what a player staked:
@@ -106,24 +106,24 @@ out of the `RaceFinished` log, which is what the winner can actually claim.
 
 Three decisions worth knowing:
 
-1. **Chainlink VRF, not a block value.** The Klever contract read
-   `get_block_random_seed()`. `block.prevrandao` and `blockhash` are the nearest
-   EVM equivalents and both are proposer-influenceable, which is unacceptable in
-   a contract that pays out. Resolution therefore became asynchronous.
+1. **Chainlink VRF, not a block value.** `block.prevrandao` and `blockhash` are
+   the only on-chain alternatives and both are proposer-influenceable, which is
+   unacceptable in a contract that pays out. Resolution is asynchronous as a
+   consequence: the order is not known until the coordinator calls back.
 2. **Pull payments.** The payout runs inside the VRF callback under a fixed
    `callbackGasLimit`. Crediting `pendingWithdrawals` and exposing `claim()`
    keeps the callback cheap and prevents any single recipient from reverting it
    and stranding the randomness.
-3. **Car ownership is checked on entry.** The Klever version took `carTokenId`
-   on trust; racing a car you do not own corrupts both the leaderboard and the
-   replay.
+3. **Car ownership is checked on entry.** `carTokenId` is verified against
+   `CarNFT.ownerOf` rather than taken on trust — racing a car you do not own
+   would corrupt both the leaderboard and the replay.
 
 ### Leaderboard
 
 All-time `wins`, `races` and `totalEarned` per address. `recordResult(raceId, …)`
 is idempotent per race ID and callable by the owner, a designated `recorder`, or
-`RaceEscrow` itself. `getPlayers(offset, limit)` is paginated — the Klever
-version returned every address in one call and would eventually run out of gas.
+`RaceEscrow` itself. `getPlayers(offset, limit)` is paginated: the player set
+grows without bound, and returning it whole would eventually run out of gas.
 
 ---
 
@@ -197,12 +197,15 @@ after any interface change.
 
 ## Metadata
 
-`CarNFT.tokenURI` is `<baseURI><tokenId>`. Two ways to serve it:
+`CarNFT.tokenURI` is `<baseURI><tokenId>`, and the base URI points at a pinned
+IPFS directory. Nothing in this repository serves metadata at play time — the
+collection is published once and the contract points at it.
 
-- **`packages/metadata-api`** during development — `setBaseURI("http://localhost:3001/metadata/")`.
-- **A pinned IPFS directory** for production — `scripts/pin-collection.mjs` pins
-  each car's GLB and PNG, `scripts/pin-metadata-dir.mjs` uploads the metadata as
-  one directory, then `setBaseURI("ipfs://<folderCID>/")`.
+Republishing is two scripts: `scripts/pin-collection.mjs` pins each car's GLB
+and PNG, `scripts/pin-metadata-dir.mjs` uploads the metadata as one directory,
+then `setBaseURI("ipfs://<folderCID>/")`. Both read the asset pipeline output,
+which lives outside this repository, so neither runs out of a fresh clone. What
+was published is recorded in `scripts/collection/`.
 
-The JSON already follows the ERC-721 / OpenSea shape: `name`, `description`,
-`image`, `animation_url` (the GLB), `external_url`, `attributes`.
+The JSON follows the ERC-721 / OpenSea shape: `name`, `description`, `image`,
+`animation_url` (the GLB), `external_url`, `attributes`.

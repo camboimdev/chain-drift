@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { formatDrift, RACE_ENTRY_FEE, MAX_PARTICIPANTS } from "@chain-drift/shared";
-import { useWallet } from "../context/WalletContext";
+import { useWallet } from "../context/walletContextValue";
 import { fetchMintFeeDrift } from "../services/carNft";
 
 const DS = {

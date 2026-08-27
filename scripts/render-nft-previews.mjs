@@ -7,6 +7,15 @@
  * Usage:
  *   node scripts/render-nft-previews.mjs           # all cars
  *   node scripts/render-nft-previews.mjs 5 11 12   # specific car IDs
+ *
+ * REQUIRES the asset pipeline output: a `chain_drift_pipeline/` directory
+ * beside this repository, holding `output/collection/collection.json` and one
+ * `car_NNN/` folder per car. It is not part of this repository, and without it
+ * this script cannot run.
+ *
+ * You only need this to re-pin or extend the collection. The 61 published cars
+ * are already pinned, recorded in `packages/frontend/src/data/collectionManifest.ts`,
+ * and pointed at by the deployed contract's base URI.
  */
 
 import { createRequire } from "module";
@@ -18,8 +27,10 @@ import { fileURLToPath } from "url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
+// puppeteer is not a dependency of this repository — install it on demand:
+//   pnpm add -w -D puppeteer
 const puppeteer = require(
-  join(__dirname, "../packages/metadata-api/node_modules/puppeteer")
+  join(__dirname, "../node_modules/puppeteer")
 );
 
 // ── Config ────────────────────────────────────────────────────────────────────

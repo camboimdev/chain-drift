@@ -12,12 +12,11 @@ import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /// @title CarNFT — Chain Drift car collection
-/// @notice ERC-721 replacement for the Klever KDA collection `CAR-2JT4`.
-///         The 3D car is resolved client-side from `tokenId` against the
-///         collection manifest, so the contract only needs to track ownership
-///         and equipped upgrade parts.
-/// @dev Token IDs start at 1 and increase monotonically, matching the Klever
-///      nonce semantics the renderer and metadata pipeline already assume.
+/// @notice The Chain Drift car collection. The 3D car is resolved client-side
+///         from `tokenId` against the collection manifest, so the contract only
+///         needs to track ownership and equipped upgrade parts.
+/// @dev Token IDs start at 1 and increase monotonically — the renderer and the
+///      metadata pipeline both key off that.
 contract CarNFT is ERC721Enumerable, Ownable {
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.Bytes32Set;
@@ -31,7 +30,7 @@ contract CarNFT is ERC721Enumerable, Ownable {
     /// @notice Where the mint fees accumulate. Defaults to the deployer.
     address public feeRecipient;
 
-    /// @notice Base URI for `tokenURI` — the metadata-api or an IPFS gateway.
+    /// @notice Base URI for `tokenURI` — the pinned IPFS metadata directory.
     string private _baseTokenURI;
 
     uint256 private _nextTokenId = 1;
