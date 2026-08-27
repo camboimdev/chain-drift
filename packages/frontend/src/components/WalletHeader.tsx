@@ -3,6 +3,13 @@ import { formatDrift } from "@chain-drift/shared";
 import { useWallet } from "../context/walletContextValue";
 import { useMintCar } from "../hooks/useMintCar";
 import { useWinnings } from "../hooks/useWinnings";
+import { CopyAddress } from "./CopyAddress";
+import {
+  CAR_NFT_ADDRESS,
+  DRIFT_TOKEN_ADDRESS,
+  LEADERBOARD_ADDRESS,
+  RACE_ESCROW_ADDRESS,
+} from "../config/chain";
 import { TxLink } from "./TxLink";
 
 const DS = {
@@ -32,6 +39,14 @@ function fmtBalance(n: number): string {
 function shortenAddress(addr: string): string {
   return `${addr.slice(0, 10)}...${addr.slice(-6)}`;
 }
+
+/** The deployed contracts the game talks to, in the order a player meets them. */
+const CONTRACTS: { label: string; address?: `0x${string}` }[] = [
+  { label: "DRIFT",       address: DRIFT_TOKEN_ADDRESS  },
+  { label: "CAR NFT",     address: CAR_NFT_ADDRESS      },
+  { label: "ESCROW",      address: RACE_ESCROW_ADDRESS  },
+  { label: "LEADERBOARD", address: LEADERBOARD_ADDRESS  },
+];
 
 function WalletIcon() {
   return (
@@ -242,9 +257,12 @@ export function WalletHUD({ fleetCount, onMintSuccess }: WalletHUDProps) {
               <div style={{ fontSize: 7, color: DS.textDisabled, letterSpacing: "0.18em", marginBottom: 5 }}>
                 ADDRESS
               </div>
-              <div style={{ fontSize: 9, color: DS.textMeta, letterSpacing: "0.04em" }}>
-                {shortenAddress(wallet.address)}
-              </div>
+              <CopyAddress
+                address={wallet.address}
+                label={shortenAddress(wallet.address)}
+                fontSize={9}
+                letterSpacing="0.04em"
+              />
             </div>
 
             {/* Balances */}
@@ -295,6 +313,34 @@ export function WalletHUD({ fleetCount, onMintSuccess }: WalletHUDProps) {
                   <span style={{ fontSize: 8, color: DS.textMeta, letterSpacing: "0.06em" }}>
                     {value}
                   </span>
+                </div>
+              ))}
+            </div>
+
+            {/* ── Deployed contracts ── */}
+            <div style={{ padding: "10px 16px", borderBottom: `1px solid ${DS.divider}` }}>
+              <div style={{ fontSize: 7, color: DS.textDisabled, letterSpacing: "0.18em", marginBottom: 7 }}>
+                CONTRACTS
+              </div>
+              {CONTRACTS.map(({ label, address }) => (
+                <div
+                  key={label}
+                  style={{
+                    display:        "flex",
+                    justifyContent: "space-between",
+                    alignItems:     "center",
+                    gap:            12,
+                    marginBottom:   6,
+                  }}
+                >
+                  <span style={{ fontSize: 8, color: DS.textDisabled, letterSpacing: "0.16em" }}>
+                    {label}
+                  </span>
+                  {address ? (
+                    <CopyAddress address={address} fontSize={8} letterSpacing="0.04em" />
+                  ) : (
+                    <span style={{ fontSize: 8, color: DS.textDisabled }}>—</span>
+                  )}
                 </div>
               ))}
             </div>

@@ -1,5 +1,6 @@
 import type { CarNFT } from "@chain-drift/shared";
 import { CarStatBlock } from "./garage/StatBars";
+import { CopyAddress } from "./CopyAddress";
 
 const DS = {
   bg:            "#000000",
@@ -156,7 +157,19 @@ export function CarHUD({ car, onClose }: CarHUDProps) {
             { label: "NAME",   value: car.name.toUpperCase(), color: DS.textMeta },
             { label: "RARITY", value: car.rarity.toUpperCase(), color: rarityColor(car.rarity) },
             { label: "TOKEN",  value: tokenStr, color: DS.textMeta },
-            { label: "OWNER",  value: ownerStr, color: DS.textDisabled },
+            {
+              label: "OWNER",
+              value: (
+                <CopyAddress
+                  address={car.owner}
+                  label={ownerStr}
+                  color={DS.textDisabled}
+                  fontSize={8}
+                  letterSpacing="0.05em"
+                />
+              ),
+              color: DS.textDisabled,
+            },
           ].map(({ label, value, color }) => (
             <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
               <span style={{ fontSize: 8, color: DS.textDisabled, letterSpacing: "0.18em", flexShrink: 0 }}>

@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { formatDrift } from "@chain-drift/shared";
 import { fetchRanking, type PlayerStats } from "../services/leaderboard";
+import { CopyAddress } from "./CopyAddress";
 
 const DS = {
   bg: "#000000",
@@ -187,16 +188,21 @@ export function LeaderboardScreen({ walletAddress, onClose }: LeaderboardScreenP
                   <span
                     style={{
                       flex: 1,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      minWidth: 0,
                       fontSize: 9,
                       color: isMe ? DS.accent : DS.textMeta,
                       letterSpacing: "0.06em",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
                     }}
                   >
-                    {shortAddr(p.address)}
-                    {isMe && <span style={{ marginLeft: 8, fontSize: 7 }}>YOU</span>}
+                    <CopyAddress
+                      address={p.address}
+                      label={shortAddr(p.address)}
+                      color={isMe ? DS.accent : DS.textMeta}
+                    />
+                    {isMe && <span style={{ fontSize: 7 }}>YOU</span>}
                   </span>
                   <span style={{ width: 60, flexShrink: 0, textAlign: "right", fontSize: 9, color: DS.textMeta }}>
                     {p.races}
