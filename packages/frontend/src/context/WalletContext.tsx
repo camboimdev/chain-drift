@@ -4,6 +4,9 @@
  * The rest of the app only ever needs "who is connected, on which chain, with
  * how much DRIFT", so wagmi's hooks stay in here and everything else reaches
  * them through `useWallet()` in `walletContextValue.ts`.
+ *
+ * Picking a wallet is its own flow: `connectWallet()` opens `ConnectModal`,
+ * which owns the connector list, the QR and its own error states.
  */
 
 import type {
@@ -15,7 +18,8 @@ import type {
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatEther } from "viem";
-import { useAccount, useBalance, useConnect, useDisconnect, useSwitchChain } from "wagmi";
+import { useAccount, useBalance, useDisconnect, useSwitchChain } from "wagmi";
+import { ConnectModal } from "../components/wallet/ConnectModal";
 import { CHAIN_ID, NETWORK_LABEL } from "../config/chain";
 import { fetchDriftBalance } from "../services/driftToken";
 import { WalletContext } from "./walletContextValue";
@@ -26,7 +30,6 @@ interface WalletProviderProps {
 
 export function WalletProvider({ children }: WalletProviderProps) {
   const { address, isConnected, isConnecting, isReconnecting, chainId } = useAccount();
-  const { connectAsync, connectors } = useConnect();
   const { disconnect } = useDisconnect();
   const { switchChainAsync } = useSwitchChain();
   const { data: nativeBalance, refetch: refetchNative } = useBalance({ address });
@@ -34,6 +37,7 @@ export function WalletProvider({ children }: WalletProviderProps) {
   const [user, setUser] = useState<User | null>(null);
   const [driftBalance, setDriftBalance] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [isConnectModalOpen, setConnectModalOpen] = useState(false);
 
   const isWrongNetwork = isConnected && chainId !== undefined && chainId !== CHAIN_ID;
 
@@ -62,10 +66,9 @@ export function WalletProvider({ children }: WalletProviderProps) {
   }, [refreshBalances]);
 
   const state: WalletState = useMemo(() => {
-    if (isConnecting || isReconnecting) return "connecting";
-    if (error) return "error";
-    return isConnected ? "connected" : "disconnected";
-  }, [isConnecting, isReconnecting, isConnected, error]);
+    if (isConnected) return "connected";
+    return isConnecting || isReconnecting ? "connecting" : "disconnected";
+  }, [isConnecting, isReconnecting, isConnected]);
 
   const wallet: WalletInfo | null = useMemo(() => {
     if (!address || !isConnected) return null;
@@ -79,22 +82,10 @@ export function WalletProvider({ children }: WalletProviderProps) {
     };
   }, [address, isConnected, nativeBalance, driftBalance, isWrongNetwork, chainId]);
 
-  const connectWallet = useCallback(async () => {
+  const connectWallet = useCallback(() => {
     setError(null);
-    try {
-      // An injected wallet is the fastest path when one is present; otherwise
-      // fall back to Coinbase Wallet, which can onboard with a passkey.
-      const injected = connectors.find((c) => c.type === "injected" && c.id !== "coinbaseWallet");
-      const connector = injected ?? connectors[0];
-      if (!connector) throw new Error("No wallet connector available");
-
-      await connectAsync({ connector, chainId: CHAIN_ID });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to connect wallet.";
-      setError(message);
-      console.error("[Wallet] Connection error:", err);
-    }
-  }, [connectAsync, connectors]);
+    setConnectModalOpen(true);
+  }, []);
 
   const disconnectWallet = useCallback(() => {
     disconnect();
@@ -132,5 +123,13 @@ export function WalletProvider({ children }: WalletProviderProps) {
     error,
   };
 
-  return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
+  return (
+    <WalletContext.Provider value={value}>
+      {children}
+      <ConnectModal
+        open={isConnectModalOpen}
+        onClose={() => setConnectModalOpen(false)}
+      />
+    </WalletContext.Provider>
+  );
 }

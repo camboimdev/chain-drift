@@ -18,18 +18,20 @@ export interface User {
   joinedAt: Date;
 }
 
-export type WalletState = "disconnected" | "connecting" | "connected" | "error";
+export type WalletState = "disconnected" | "connecting" | "connected";
 
 export interface WalletContextType {
   wallet: WalletInfo | null;
   user: User | null;
   state: WalletState;
-  connectWallet: () => Promise<void>;
+  /** Opens the connect modal; the wallet choice is made there. */
+  connectWallet: () => void;
   disconnectWallet: () => void;
   completeOnboarding: () => void;
   /** True when connected to a chain the game is not deployed on. */
   isWrongNetwork: boolean;
   switchToGameChain: () => Promise<void>;
   refreshBalances: () => Promise<void>;
+  /** Last network-switch failure. Connection errors are shown in the modal. */
   error: string | null;
 }

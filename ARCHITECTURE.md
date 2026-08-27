@@ -28,7 +28,9 @@ Why Base:
 - **Chainlink VRF v2.5 is deployed** on both Base Sepolia and Base mainnet,
   which the race resolution depends on.
 - **Coinbase Smart Wallet** onboards a player with a passkey and no seed phrase,
-  which matters more for a racing game than raw throughput.
+  which matters more for a racing game than raw throughput. Browser extensions
+  are discovered over EIP-6963 and mobile wallets pair over WalletConnect, so
+  the connect modal covers every wallet a player is likely to already hold.
 - Transaction costs low enough that a per-race escrow is economically sensible.
 
 ---

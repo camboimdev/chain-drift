@@ -63,7 +63,7 @@ function AppContent() {
     return <OnboardingFlow onComplete={() => setShowOnboarding(false)} />;
   }
 
-  if (state === "disconnected" || state === "error" || state === "connecting") {
+  if (state !== "connected") {
     return <LoginPage />;
   }
 

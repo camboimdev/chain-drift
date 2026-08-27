@@ -12,7 +12,7 @@ The 3D race is a replay of a result the contract already settled.
 | Contracts | Solidity 0.8.28, Foundry, OpenZeppelin v5 |
 | Randomness | Chainlink VRF v2.5 |
 | Frontend | React 19, Vite, react-three-fiber, wagmi + viem |
-| Wallets | Injected (MetaMask, Rabby…) and Coinbase Smart Wallet (passkey, no seed phrase) |
+| Wallets | EIP-6963 browser wallets (MetaMask, Rabby…), Coinbase Smart Wallet (passkey, no seed phrase) and WalletConnect (any mobile wallet) |
 
 ## Packages
 
