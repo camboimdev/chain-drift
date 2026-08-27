@@ -22,6 +22,7 @@ import {
   getRaceFinish,
   requestResolve,
 } from "../services/raceContract";
+import { CopyAddress } from "./CopyAddress";
 
 const DS = {
   bg: "#000000",
@@ -213,10 +214,16 @@ export function RaceWaitingRoom({
                 />
                 {p ? (
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em" }}>
-                      {shortAddr(p.owner)}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <CopyAddress
+                        address={p.owner}
+                        label={shortAddr(p.owner)}
+                        color={DS.textPrimary}
+                        fontWeight={700}
+                        letterSpacing="0.1em"
+                      />
                       {isMe && (
-                        <span style={{ color: DS.accent, marginLeft: 8, fontSize: 7 }}>YOU</span>
+                        <span style={{ color: DS.accent, fontSize: 7 }}>YOU</span>
                       )}
                     </div>
                     <div style={{ fontSize: 7, color: DS.textDisabled, letterSpacing: "0.1em", marginTop: 2 }}>

@@ -1,7 +1,9 @@
+import type { ReactNode } from "react";
 import type { CarNFT } from "@chain-drift/shared";
 import { DS, archetypeOf, rarityTextColor, shortAddress, tokenLabel, traitOf } from "./design";
 import { ScrambleText } from "./ScrambleText";
 import { CarStatBlock } from "./StatBars";
+import { CopyAddress } from "../CopyAddress";
 
 /**
  * The featured car's readout.
@@ -16,7 +18,7 @@ function Divider() {
   return <div style={{ height: 1, background: DS.divider, margin: "12px 0" }} />;
 }
 
-function MetaRow({ label, value }: { label: string; value: string }) {
+function MetaRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "3px 0" }}>
       <span style={{ fontSize: 8, letterSpacing: "0.18em", color: DS.textDisabled, flexShrink: 0 }}>
@@ -87,7 +89,16 @@ export function SpecSheet({ car }: { car: CarNFT }) {
       <Divider />
 
       <MetaRow label="TOKEN" value={`CDCAR #${car.tokenId} · ${traitOf(car, "Neon Color")}`} />
-      <MetaRow label="OWNER" value={shortAddress(car.owner)} />
+      <MetaRow
+        label="OWNER"
+        value={
+          <CopyAddress
+            address={car.owner}
+            label={shortAddress(car.owner)}
+            fontSize={8}
+          />
+        }
+      />
 
       <div
         style={{

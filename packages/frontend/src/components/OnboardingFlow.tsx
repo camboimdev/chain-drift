@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { formatDrift, RACE_ENTRY_FEE, MAX_PARTICIPANTS } from "@chain-drift/shared";
 import { useWallet } from "../context/walletContextValue";
 import { fetchMintFeeDrift } from "../services/carNft";
+import { CopyAddress } from "./CopyAddress";
 
 const DS = {
   bg: "#000000",
@@ -18,7 +19,7 @@ interface OnboardingFlowProps {
   onComplete: () => void;
 }
 
-function Field({ label, value }: { label: string; value: string }) {
+function Field({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div
       style={{
@@ -132,7 +133,22 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
               background: DS.surface,
             }}
           >
-            <Field label="ADDRESS" value={wallet?.address ?? "—"} />
+            <Field
+              label="ADDRESS"
+              value={
+                wallet
+                  ? (
+                    <CopyAddress
+                      address={wallet.address}
+                      label={wallet.address}
+                      color={DS.textPrimary}
+                      fontSize={10}
+                      letterSpacing="0.04em"
+                    />
+                  )
+                  : "—"
+              }
+            />
             <Field
               label="GAS"
               value={wallet ? `${(wallet.balance ?? 0).toFixed(4)} ETH` : "—"}

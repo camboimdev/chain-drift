@@ -1,4 +1,5 @@
 import { DS, shortAddress } from "./design";
+import { CopyAddress } from "../CopyAddress";
 import type { GarageMode } from "./layout";
 
 /**
@@ -105,8 +106,14 @@ export function GarageHeader({
       </div>
 
       <div style={{ display: "flex", gap: 14, marginTop: 8, fontSize: 8, letterSpacing: "0.16em" }}>
-        <span style={{ color: DS.textDisabled }}>
-          OWNER <span style={{ color: DS.textMeta }}>{shortAddress(playerId)}</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 6, color: DS.textDisabled }}>
+          OWNER
+          <CopyAddress
+            address={playerId}
+            label={shortAddress(playerId)}
+            fontSize={8}
+            letterSpacing="0.16em"
+          />
         </span>
         {total > 0 && (
           <span style={{ color: DS.textDisabled }}>
